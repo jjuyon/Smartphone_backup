@@ -1,8 +1,8 @@
 """Fenêtre « Prérequis » : état de chaque outil et installation assistée."""
 import subprocess
 
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtWidgets import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel,
+from .qt import Qt, QThread, Signal
+from .qt import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from ..core import prereqs

@@ -16,11 +16,20 @@ Copiez le fichier sur l'autre PC, rendez-le exécutable (`chmod +x`) et lancez-l
 L'AppImage contient Python, Qt et l'appli ; elle nécessite une glibc au moins aussi récente
 que celle de la machine de build.
 
+⚠️ L'AppImage (Qt 6 de pip) exige un processeur **x86-64-v2** (SSE4.2, POPCNT : environ 2009
+et après). Pour un processeur plus ancien (Core 2 Duo, MacBook 2008…), utilisez
+`install.sh` ci-dessous.
+
 ## Installation depuis les sources
 
 ```bash
 ./install.sh                   # libs Qt manquantes, venv, raccourci dans le menu
 ```
+`install.sh` détecte le processeur :
+- récent → venv avec PySide6 (pip) ;
+- ancien → Qt de la distribution (PySide6, ou PySide2/Qt 5 sur Ubuntu 24.04), via apt/dnf/pacman.
+`./install.sh --systeme` force ce second mode. L'appli fonctionne avec Qt 6 comme avec Qt 5
+(`synchro/ui/qt.py`).
 
 Lancement : menu « Synchro Smartphone », ou `./lancer.sh`.
 

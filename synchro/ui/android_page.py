@@ -1,7 +1,7 @@
 """Écran Android : synchronisation via adb."""
 import os
 
-from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLineEdit
+from .qt import QCheckBox, QComboBox, QHBoxLayout, QLineEdit
 
 from ..core import android
 from .common import GREEN, GREY, ORANGE, RED, BasePage, card, folder_row, label, status_html

@@ -1,8 +1,8 @@
 """Fenêtre principale : accueil + écrans iPhone et Android dans une pile."""
 import sys
 
-from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
-from PySide6.QtWidgets import QApplication, QMessageBox, QStackedWidget
+from .qt import QLocale, QTranslator, before_app, translations_path
+from .qt import QApplication, QMessageBox, QStackedWidget
 
 from .android_page import AndroidPage
 from .common import STYLE, DeviceWatcher, app_icon, dark_palette
@@ -68,11 +68,12 @@ class MainWindow(QStackedWidget):
 def load_translations(app):
     """Boîtes de dialogue Qt (sélecteur de dossiers, Oui/Non…) en français."""
     tr = QTranslator(app)
-    if tr.load(QLocale("fr_FR"), "qtbase", "_", QLibraryInfo.path(QLibraryInfo.TranslationsPath)):
+    if tr.load(QLocale("fr_FR"), "qtbase", "_", translations_path()):
         app.installTranslator(tr)
 
 
 def main():
+    before_app()
     app = QApplication(sys.argv)
     app.setApplicationName(TITLE)
     app.setDesktopFileName("synchro-smartphone")

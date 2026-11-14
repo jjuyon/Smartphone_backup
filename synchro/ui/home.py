@@ -1,6 +1,6 @@
 """Écran d'accueil : choix iPhone / Android et état des prérequis."""
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from .qt import Qt, Signal
+from .qt import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..core import prereqs
 from .common import GREEN, GREY, ORANGE, RED, ClickableCard, label, status_html

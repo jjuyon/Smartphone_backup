@@ -1,9 +1,10 @@
 """Thème, petits widgets et classes partagées par toutes les pages."""
 import os
 
-from PySide6.QtCore import QSettings, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPalette
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+from .qt import QSettings, Qt, QThread, QUrl, Signal
+from .qt import event_pos
+from .qt import QColor, QDesktopServices, QIcon, QPalette
+from .qt import (QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
@@ -142,7 +143,7 @@ class ClickableCard(QFrame):
         self.setCursor(Qt.PointingHandCursor)
 
     def mouseReleaseEvent(self, e):
-        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+        if e.button() == Qt.LeftButton and self.rect().contains(event_pos(e)):
             self.clicked.emit()
 
 

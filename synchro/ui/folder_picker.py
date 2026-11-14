@@ -10,12 +10,13 @@ import os
 import shutil
 import subprocess
 
-from PySide6.QtCore import QDir, QFileInfo, QProcess, QSize, QStandardPaths, QStorageInfo, Qt, QTimer
-from PySide6.QtWidgets import (QDialog, QFileIconProvider, QFileSystemModel, QHBoxLayout, QInputDialog, QLineEdit,
+from .qt import QDir, QFileInfo, QProcess, QSize, QStandardPaths, QStorageInfo, Qt, QTimer
+from .qt import (QDialog, QFileIconProvider, QFileSystemModel, QHBoxLayout, QInputDialog, QLineEdit,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                                QSplitter, QTreeView, QVBoxLayout)
 
 from .common import app_icon, label
+from .qt import to_bytes
 
 NETWORK_FS = {"cifs", "smb3", "smbfs", "nfs", "nfs4", "fuse.sshfs", "fuse.rclone", "davfs",
               "fuse.davfs2", "afpfs"}
@@ -58,7 +59,7 @@ def network_mounts(known):
     res = []
     for v in QStorageInfo.mountedVolumes():
         root = v.rootPath()
-        fs = bytes(v.fileSystemType()).decode(errors="replace")
+        fs = to_bytes(v.fileSystemType()).decode(errors="replace")
         if root in known:
             continue
         if fs in NETWORK_FS or (fs.startswith("fuse.") and root.startswith(("/media", "/run/media", "/mnt"))):
@@ -269,10 +270,10 @@ class FolderPicker(QDialog):
         self.setCursor(Qt.BusyCursor)
         proc = QProcess(self)
 
-        def done(code, _status):
+        def done(code, _status=None):
             self.unsetCursor()
-            out = bytes(proc.readAllStandardOutput()).decode(errors="replace")
-            err = bytes(proc.readAllStandardError()).decode(errors="replace").strip()
+            out = to_bytes(proc.readAllStandardOutput()).decode(errors="replace")
+            err = to_bytes(proc.readAllStandardError()).decode(errors="replace").strip()
             if code != 0:
                 QMessageBox.warning(self, "Périphérique", err or f"Échec ({action}).")
             self.devices_sig = None

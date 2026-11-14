@@ -1,7 +1,7 @@
 """Écran iPhone : sauvegarde idevicebackup2 puis rangement."""
 import os
 
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout
+from .qt import QCheckBox, QHBoxLayout
 
 from ..core import iphone
 from .common import GREEN, GREY, ORANGE, RED, BasePage, card, folder_row, label, status_html

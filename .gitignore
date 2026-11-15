@@ -10,3 +10,6 @@ lancer.sh
 build/
 dist/
 *.AppImage
+
+# version écrite par la fabrication
+smartphone_backup/_build.py

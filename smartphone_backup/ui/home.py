@@ -2,6 +2,7 @@
 from .qt import Qt, Signal
 from .qt import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from .. import version_text
 from ..core import prereqs
 from .common import GREEN, GREY, ORANGE, RED, ClickableCard, label, quit_button, status_html
 
@@ -17,6 +18,9 @@ class HomePage(QWidget):
         root.setContentsMargins(40, 18, 40, 30)
         root.setSpacing(10)
         top = QHBoxLayout()
+        v = label(f"Version {version_text()}", "hint")
+        v.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        top.addWidget(v, 0, Qt.AlignTop)
         top.addStretch(1)
         top.addWidget(quit_button(self.quit))
         root.addLayout(top)

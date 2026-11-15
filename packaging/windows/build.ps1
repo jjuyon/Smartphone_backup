@@ -16,6 +16,9 @@ Write-Host "== Dépendances"
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt pyinstaller pillow
 
+Write-Host "== Version $Version"
+Set-Content -Encoding utf8 smartphone_backup\_build.py "VERSION = `"$Version`"`n"
+
 Write-Host "== Icône"
 python packaging\windows\make_icon.py build\app.ico
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fabrique dist/Smartphone_Backup-x86_64.AppImage (un seul fichier, sans installation).
 #
-#   ./build_appimage.sh
+#   ./build_appimage.sh            (VERSION=1.2.3 ./build_appimage.sh pour fixer la version)
 #
 # Étapes : venv de build -> PyInstaller (Python + Qt + appli) -> AppDir -> appimagetool.
 # Note : l'AppImage fonctionne sur les distributions dont la glibc est au moins aussi récente
@@ -18,6 +18,10 @@ echo "== Environnement de build =="
 [ -x "$BUILD/venv/bin/python" ] || python3 -m venv "$BUILD/venv"
 "$BUILD/venv/bin/pip" install -q --upgrade pip
 "$BUILD/venv/bin/pip" install -q -r "$DIR/requirements.txt" pyinstaller
+
+if [ -n "${VERSION:-}" ]; then
+    echo "VERSION = \"$VERSION\"" > "$DIR/smartphone_backup/_build.py"
+fi
 
 echo "== PyInstaller =="
 rm -rf "$BUILD/pyi" "$BUILD/work" "$APPDIR"

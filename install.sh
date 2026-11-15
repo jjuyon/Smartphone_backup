@@ -85,9 +85,20 @@ chmod +x "$DIR/lancer.sh"
 
 # ------------------------------------------------------------ menu
 echo "== Raccourci dans le menu =="
-mkdir -p "$HOME/.local/share/applications"
-rm -f "$HOME/.local/share/applications/synchro-smartphone.desktop"  # ancien nom
-cat > "$HOME/.local/share/applications/smartphone-backup.desktop" <<EOF
+APPS="$HOME/.local/share/applications"
+NEW="$APPS/smartphone-backup.desktop"
+mkdir -p "$APPS"
+# anciens lanceurs de l'appli, quel que soit leur nom de fichier : ancien nom « Synchro
+# Smartphone », ancien dossier, AppImage intégrée au menu, raccourci créé à la main…
+for f in "$APPS"/*.desktop; do
+    [ -f "$f" ] && [ "$f" != "$NEW" ] || continue
+    if grep -qiE '^Name(\[[^]]*\])?=(Synchro Smartphone|Smartphone Backup)[[:space:]]*$' "$f" \
+        || grep -qiE '^(Exec|TryExec)=.*(synchro_smartphone\.py|synchro-smartphone|Synchro_Smartphone|Smartphone_Backup)' "$f"; then
+        echo "   Ancien raccourci supprimé : $f"
+        rm -f "$f"
+    fi
+done
+cat > "$NEW" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Smartphone Backup
@@ -96,9 +107,20 @@ Exec=$DIR/lancer.sh
 Icon=$DIR/smartphone_backup/icons/app.svg
 Terminal=false
 Categories=Utility;
-EOF
+StartupWMClass=smartphone-backup
+DESKTOP
+chmod +x "$NEW"
+echo "   $NEW -> $DIR"
+# mise à jour immédiate du menu (sinon KDE peut garder l'ancienne entrée jusqu'à la reconnexion)
+if command -v update-desktop-database >/dev/null; then update-desktop-database "$APPS" 2>/dev/null || true; fi
+for k in kbuildsycoca6 kbuildsycoca5; do
+    if command -v "$k" >/dev/null; then "$k" >/dev/null 2>&1 || true; break; fi
+done
+if command -v xdg-desktop-menu >/dev/null; then xdg-desktop-menu forceupdate 2>/dev/null || true; fi
 
 echo
 echo "Terminé. Lancez « Smartphone Backup » depuis le menu, ou : $DIR/lancer.sh"
 echo "Les outils des téléphones (adb, libimobiledevice…) s'installent depuis l'appli"
 echo "(bandeau « Aide à l'installation » sur l'écran d'accueil)."
+echo "Si l'appli était épinglée (barre des tâches, favoris du menu, dock), retirez l'ancienne"
+echo "icône et épinglez de nouveau « Smartphone Backup »."

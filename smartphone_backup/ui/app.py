@@ -5,7 +5,7 @@ import sys
 from .qt import QKeySequence, QLocale, QShortcut, QTimer, QTranslator, before_app, translations_path
 from .qt import QApplication, QMessageBox, QStackedWidget
 
-from ..core import procs
+from ..core import procs, system
 from .android_page import AndroidPage
 from .common import STYLE, DeviceWatcher, app_icon, dark_palette, fit_to_screen, scrollable
 from .home import HomePage
@@ -103,6 +103,14 @@ def load_translations(app):
 
 
 def main():
+    system.setup_path()  # outils de l'appli (adb téléchargé, outils iPhone fournis sous Windows)
+    if system.IS_WIN:
+        # icône de l'appli (et non celle de Python) dans la barre des tâches
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SmartphoneBackup")
+        except Exception:
+            pass
     before_app()
     app = QApplication(sys.argv)
     app.setApplicationName(TITLE)

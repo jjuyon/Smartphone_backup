@@ -1,6 +1,8 @@
 """Fenêtre « Prérequis » : état de chaque outil et installation assistée."""
 import subprocess
 
+from ..core import system
+
 from .qt import Qt, QThread, Signal
 from .qt import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QVBoxLayout)
@@ -20,10 +22,18 @@ class Installer(QThread):
     def run(self):
         ok = True
         for cmd in self.cmds:
+            if callable(cmd):  # étape écrite en Python (ex. téléchargement d'adb sous Windows)
+                try:
+                    cmd(self.log.emit)
+                except Exception as e:  # noqa: BLE001
+                    self.log.emit(f"Échec : {e}")
+                    ok = False
+                    break
+                continue
             self.log.emit("$ " + " ".join(cmd))
             try:
-                p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     text=True, errors="replace", bufsize=1)
+                p = system.popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, errors="replace", bufsize=1)
                 for line in p.stdout:
                     self.log.emit(line.rstrip())
                 p.wait()
@@ -84,6 +94,7 @@ class PrereqDialog(QDialog):
         self.b_install.clicked.connect(self.install)
         self.b_copy = QPushButton("Copier la commande")
         self.b_copy.clicked.connect(lambda: QApplication.clipboard().setText(self.shown))
+        self.b_copy.setVisible(not system.IS_WIN)  # Windows : étapes faites par l'appli, pas de commande
         self.b_recheck = QPushButton("Vérifier à nouveau")
         self.b_recheck.clicked.connect(self.refresh)
         self.b_close = QPushButton("Fermer")

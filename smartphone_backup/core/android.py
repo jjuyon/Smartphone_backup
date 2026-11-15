@@ -15,6 +15,9 @@ import tempfile
 import time
 from datetime import datetime
 
+from . import system
+from .system import local_rel as phone_path, safe_name
+
 # (dossier sur le téléphone, dossier de destination local)
 SOURCES = {
     "photos": [("DCIM", "Photos et vidéos/DCIM"), ("Pictures", "Photos et vidéos/Pictures"),
@@ -40,7 +43,7 @@ class Adb:
         return base + list(args)
 
     def run(self, *args, timeout=120):
-        return subprocess.run(self.cmd(*args), capture_output=True, text=True,
+        return system.run(self.cmd(*args), capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=timeout)
 
     def cancel(self):
@@ -52,7 +55,7 @@ class Adb:
 
 
 def adb_available():
-    return shutil.which("adb") is not None
+    return system.which("adb") is not None
 
 
 def list_devices():
@@ -60,8 +63,8 @@ def list_devices():
     if not adb_available():
         return []
     try:
-        out = subprocess.run(["adb", "devices", "-l"], capture_output=True, text=True,
-                             timeout=10).stdout
+        out = system.run(["adb", "devices", "-l"], capture_output=True, text=True, encoding="utf-8",
+                         errors="replace", timeout=10).stdout
     except Exception:
         return []
     devs = []
@@ -145,6 +148,30 @@ def batches(todo, remote):
             yield d, batch
 
 
+def pull(adb, args, progress, watched):
+    """adb pull -a … ; progress(octets déjà reçus pour les fichiers surveillés). → (code, message)"""
+    with tempfile.TemporaryFile() as errf:
+        p = system.popen(adb.cmd("pull", "-a", *args), stdout=errf, stderr=subprocess.STDOUT)
+        adb.procs.append(p)
+        while True:  # progression : taille des fichiers déjà arrivés
+            try:
+                p.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            got = 0
+            for f in watched:
+                try:
+                    got += os.path.getsize(f)
+                except OSError:
+                    pass
+            progress(got)
+        adb.procs.remove(p)
+        errf.seek(0)
+        msg = errf.read().decode("utf-8", "replace").strip()
+    return p.returncode, (msg.splitlines()[-1] if msg else "")
+
+
 def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None):
     """selected : liste de (dossier téléphone absolu, dossier local relatif).
 
@@ -163,7 +190,7 @@ def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None)
             log(f"  {src} : absent, ignoré")
             continue
         local_dir = os.path.join(out, local_rel)
-        todo = [r for r, (s, m) in remote.items() if needs_copy(os.path.join(local_dir, *r.split("/")), s, m)]
+        todo = [r for r, (s, m) in remote.items() if needs_copy(os.path.join(local_dir, phone_path(r)), s, m)]
         log(f"  {src} : {len(remote)} fichiers, {len(todo)} à copier "
             f"({human(sum(remote[r][0] for r in todo))})")
         plans.append((src, local_dir, remote, todo))
@@ -181,29 +208,22 @@ def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None)
         for d, batch in batches(todo, remote):
             if cancel():
                 break
-            dest_dir = os.path.join(local_dir, *d.split("/")) if d else local_dir
+            dest_dir = os.path.join(local_dir, phone_path(d)) if d else local_dir
             os.makedirs(dest_dir, exist_ok=True)
-            dests = [os.path.join(dest_dir, rel.rpartition("/")[2]) for rel in batch]
-            with tempfile.TemporaryFile() as errf:
-                p = subprocess.Popen(adb.cmd("pull", "-a", *[f"{src}/{rel}" for rel in batch], dest_dir),
-                                     stdout=errf, stderr=subprocess.STDOUT)
-                adb.procs.append(p)
-                while True:  # progression : taille des fichiers déjà arrivés
-                    try:
-                        p.wait(timeout=0.5)
-                        break
-                    except subprocess.TimeoutExpired:
-                        pass
-                    got = 0
-                    for f in dests:
-                        try:
-                            got += os.path.getsize(f)
-                        except OSError:
-                            pass
-                    progress(min(99, (done + got) * 100 / total))
-                adb.procs.remove(p)
-                errf.seek(0)
-                msg = errf.read().decode("utf-8", "replace").strip()
+            dests = [os.path.join(dest_dir, safe_name(rel.rpartition("/")[2])) for rel in batch]
+            # adb garde le nom du téléphone : un nom interdit sous Windows (« : », « ? »…) est
+            # copié seul, vers son nom corrigé
+            plain = [(rel, d_) for rel, d_ in zip(batch, dests) if os.path.basename(d_) == rel.rpartition("/")[2]]
+            renamed = [(rel, d_) for rel, d_ in zip(batch, dests) if (rel, d_) not in plain]
+            pulls = ([([f"{src}/{rel}" for rel, _ in plain] + [dest_dir], [d_ for _, d_ in plain])] if plain else []) \
+                + [([f"{src}/{rel}", d_], [d_]) for rel, d_ in renamed]
+            msg = ""
+            for args, watched in pulls:
+                if cancel():
+                    break
+                ret, out_msg = pull(adb, args, lambda got: progress(min(99, (done + got) * 100 / total)), watched)
+                if ret not in (0, None) and out_msg:
+                    msg = out_msg
             for rel, dest in zip(batch, dests):
                 size, mtime = remote[rel]
                 if needs_copy(dest, size, mtime):
@@ -214,8 +234,8 @@ def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None)
                     copied += 1
                 done += size
                 n_done += 1
-            if p.returncode not in (0, None) and msg and not cancel():
-                log("  adb : " + msg.splitlines()[-1])
+            if msg and not cancel():
+                log("  adb : " + msg)
             progress(min(99, done * 100 / total))
             speed = done / max(time.time() - started, 1)
             left = (total - done) / speed if speed else 0
@@ -228,7 +248,7 @@ def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None)
         # plusieurs dossiers du téléphone peuvent alimenter le même dossier local
         union = {}
         for _, local_dir, remote, _ in plans:
-            union.setdefault(local_dir, set()).update(remote)
+            union.setdefault(local_dir, set()).update(phone_path(r).replace(os.sep, "/") for r in remote)
         for local_dir, rels in union.items():
             if not os.path.isdir(local_dir):
                 continue

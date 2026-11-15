@@ -1,13 +1,35 @@
 # Smartphone Backup
 
-Application Linux (Qt) pour sauvegarder / synchroniser un **iPhone** ou un **Android**.
-Au démarrage, un écran d'accueil propose le choix du téléphone et indique en direct
-lequel est branché.
+Application **Linux et Windows** (Qt) pour sauvegarder / synchroniser un **iPhone** ou un
+**Android**, et ranger ou dédoublonner des photos. Au démarrage, un écran d'accueil propose le
+choix et indique en direct quel téléphone est branché.
 
 Fonctionne sous tous les bureaux (KDE, GNOME, XFCE, Cinnamon, MATE, LXQt…), en X11
 comme en Wayland : thème sombre et icônes sont fournis par l'appli.
 
-## AppImage (recommandé pour une autre machine)
+## Windows (10 et 11)
+
+Téléchargez l'installateur `SmartphoneBackup-…-windows-setup.exe` ou la version portable
+`SmartphoneBackup-…-windows-portable.zip` (à décompresser, sans installation) depuis l'onglet
+**Releases** du dépôt GitHub, ou depuis l'onglet **Actions** (dernière fabrication).
+
+- **Android** : au premier lancement, le bandeau « Aide à l'installation » télécharge `adb`
+  depuis le site de Google (dans `%LOCALAPPDATA%\SmartphoneBackup`, sans droits administrateur).
+  Si le téléphone n'apparaît pas, installez le pilote USB de son fabricant.
+- **iPhone, sans iTunes** : les outils de sauvegarde (libimobiledevice) sont fournis avec l'appli.
+  Seul le pilote USB d'Apple est nécessaire : il vient de l'application gratuite **Apple Devices**
+  (Microsoft Store), que l'appli propose d'installer. Inutile de l'ouvrir : c'est Smartphone
+  Backup qui fait la sauvegarde.
+- Les noms de fichiers interdits sous Windows (`:` `?` `*`…) sont corrigés pendant la copie.
+- Windows SmartScreen peut afficher « Éditeur inconnu » (appli non signée) :
+  « Informations complémentaires » puis « Exécuter quand même ».
+
+Fabrication : automatique par GitHub Actions (`.github/workflows/build.yml`) à chaque envoi sur
+`main` ; un tag `v1.2.3` publie une Release. À la main sous Windows : `packaging\windows\build.ps1`.
+
+## AppImage Linux (recommandé pour une autre machine)
+
+Fabriquée aussi par GitHub Actions sur Ubuntu 22.04 (compatible avec plus de distributions).
 
 ```bash
 ./build_appimage.sh            # produit dist/Smartphone_Backup-x86_64.AppImage
@@ -79,6 +101,14 @@ avec un aperçu avant de lancer.
   Les photos ressemblantes de même taille (rafales) ne sont jamais pré-cochées.
 - Les fichiers retirés vont à la corbeille (récupérables) ou dans un dossier `_Doublons`.
 
+## Tests
+
+```bash
+pip install -r requirements.txt pytest
+QT_QPA_PLATFORM=offscreen python -m pytest tests
+```
+Les tests Android utilisent un faux téléphone (`tests/fake_adb.py`).
+
 ## Structure
 ```
 main.py                              point d'entrée
@@ -87,8 +117,12 @@ smartphone_backup/core/android.py    logique Android (sans interface)
 smartphone_backup/core/prereqs.py    vérification / installation des prérequis
 smartphone_backup/core/photos.py     rangement des photos par date
 smartphone_backup/core/dupes.py      détection des doublons (identiques, ressemblantes)
+smartphone_backup/core/system.py     différences Linux / Windows (outils, noms de fichiers)
 smartphone_backup/core/procs.py      arrêt des processus lancés par l'appli à la fermeture
 smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
 smartphone_backup/icons/             icônes SVG de l'appli
-build_appimage.sh          fabrication de l'AppImage
+build_appimage.sh                    fabrication de l'AppImage Linux
+packaging/windows/                   fabrication Windows (PyInstaller, Inno Setup, outils iPhone)
+tests/                               tests automatiques (faux téléphone Android)
+.github/workflows/build.yml          tests + fabrication Windows / Linux sur GitHub
 ```

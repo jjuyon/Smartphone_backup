@@ -15,6 +15,7 @@ from .qt import (QDialog, QFileIconProvider, QFileSystemModel, QHBoxLayout, QInp
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                                QSplitter, QTreeView, QVBoxLayout)
 
+from ..core.system import IS_WIN
 from .common import fit_to_screen, app_icon, label
 from .qt import to_bytes
 
@@ -26,8 +27,36 @@ ROLE_PATH, ROLE_DEV = Qt.UserRole, Qt.UserRole + 1
 
 
 # ---------------------------------------------------------------- périphériques
+def windows_drives():
+    """Windows : [(nom affiché, racine, type)] ; type 2 = amovible, 3 = fixe, 4 = réseau."""
+    import ctypes
+    res = []
+    for v in QStorageInfo.mountedVolumes():
+        if not v.isValid() or not v.isReady():
+            continue
+        root = v.rootPath()  # « C:/ »
+        kind = ctypes.windll.kernel32.GetDriveTypeW(root.replace("/", "\\"))
+        letter = root[:2]
+        default = {2: "Clé USB", 4: "Lecteur réseau"}.get(kind, "Disque local")
+        res.append((f"{v.name() or default} ({letter})", os.path.normpath(root), kind))
+    return res
+
+
+def parent_dir(path):
+    p = os.path.dirname(os.path.normpath(path))
+    return p or path
+
+
+def is_inside(path, folder):
+    path, folder = os.path.normcase(os.path.normpath(path)), os.path.normcase(os.path.normpath(folder))
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
 def block_devices():
-    """[(nom affiché, /dev/…, point de montage ou None, amovible)] d'après lsblk."""
+    """[(nom affiché, /dev/… ou None, point de montage ou None, amovible)] d'après lsblk
+    (Windows : lecteurs locaux et amovibles, déjà accessibles)."""
+    if IS_WIN:
+        return [(name, None, root, kind == 2) for name, root, kind in windows_drives() if kind != 4]
     if not shutil.which("lsblk"):
         return []
     try:
@@ -56,6 +85,8 @@ def block_devices():
 
 
 def network_mounts(known):
+    if IS_WIN:
+        return [(name, root) for name, root, kind in windows_drives() if kind == 4]
     res = []
     for v in QStorageInfo.mountedVolumes():
         root = v.rootPath()
@@ -64,7 +95,7 @@ def network_mounts(known):
             continue
         if fs in NETWORK_FS or (fs.startswith("fuse.") and root.startswith(("/media", "/run/media", "/mnt"))):
             res.append((os.path.basename(root.rstrip("/")) or root, root))
-    gvfs = f"/run/user/{os.getuid()}/gvfs"
+    gvfs = f"/run/user/{os.getuid()}/gvfs"  # montages réseau GNOME / GVFS
     try:
         for e in sorted(os.listdir(gvfs)):
             res.append((e.replace("server=", "").replace(",share=", "/"), os.path.join(gvfs, e)))
@@ -111,7 +142,7 @@ class FolderPicker(QDialog):
         self.b_prev.clicked.connect(self.go_back)
         self.b_up = QPushButton(app_icon("go-up"), "")
         self.b_up.setToolTip("Dossier parent")
-        self.b_up.clicked.connect(lambda: self.navigate(os.path.dirname(self.current.rstrip("/")) or "/"))
+        self.b_up.clicked.connect(lambda: self.navigate(parent_dir(self.current)))
         self.path = QLineEdit()
         self.path.returnPressed.connect(lambda: self.navigate(os.path.expanduser(self.path.text())))
         b_new = QPushButton(app_icon("folder-new"), " Nouveau dossier")
@@ -138,7 +169,7 @@ class FolderPicker(QDialog):
         self.model = QFileSystemModel(self)
         self.model.setIconProvider(DirIcons(self))
         self.model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot)
-        self.model.setRootPath("/")
+        self.model.setRootPath("" if IS_WIN else "/")  # Windows : tous les lecteurs
         self.view = QTreeView()
         self.view.setModel(self.model)
         self.view.setRootIsDecorated(False)
@@ -220,14 +251,15 @@ class FolderPicker(QDialog):
             p = QStandardPaths.writableLocation(loc)
             if p and p != home and os.path.isdir(p):
                 self.entry(os.path.basename(p) or text, app_icon(ico), p)
-        self.entry("Racine", app_icon("place-root"), "/")
+        if not IS_WIN:
+            self.entry("Racine", app_icon("place-root"), "/")
 
         if devs:
-            self.section("Périphériques")
+            self.section("Lecteurs" if IS_WIN else "Périphériques")
             for name, dev, mp, rem in devs:
                 ico = app_icon("usb" if rem else "drive")
                 state = f"Monté sur {mp}" if mp else "Non monté — cliquez pour monter"
-                self.entry(name, ico, mp, dev, f"{dev}\n{state}")
+                self.entry(name, ico, mp, dev, mp if IS_WIN else f"{dev}\n{state}")
                 if not mp:
                     it = self.side.item(self.side.count() - 1)
                     f = it.font()
@@ -305,7 +337,7 @@ class FolderPicker(QDialog):
         self.view.clearSelection()
         self.path.setText(path)
         self.b_prev.setEnabled(bool(self.history))
-        self.b_up.setEnabled(path != "/")
+        self.b_up.setEnabled(parent_dir(path) != path)
         self.highlight_sidebar()
         self.update_choice()
 
@@ -318,7 +350,7 @@ class FolderPicker(QDialog):
         best, best_len = None, -1
         for i in range(self.side.count()):
             p = self.side.item(i).data(ROLE_PATH)
-            if p and (self.current == p or self.current.startswith(p.rstrip("/") + "/")) and len(p) > best_len:
+            if p and is_inside(self.current, p) and len(p) > best_len:
                 best, best_len = self.side.item(i), len(p)
         if best:
             best.setSelected(True)

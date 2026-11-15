@@ -1,0 +1,118 @@
+# Tests (Linux + Windows), puis fabrication :
+#   - Windows : installateur .exe + version portable .zip (avec les outils iPhone)
+#   - Linux   : AppImage (construite sur Ubuntu 22.04 pour fonctionner sur plus de distributions)
+# Un tag « v1.2.3 » publie les fichiers dans une Release GitHub.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bibliothèques pour Qt (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - run: python -m pip install -r requirements.txt pytest
+      - run: python -m pytest -v tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            base=$(python3 -c "import smartphone_backup as s; print(s.__version__)")
+            echo "version=${base}-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: [tests, version]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils iPhone (libimobiledevice via MSYS2)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-libimobiledevice
+      - name: Rassembler les outils iPhone
+        shell: msys2 {0}
+        run: bash packaging/windows/collect_imobiledevice.sh build/imobiledevice
+      - name: Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Fabrication
+        shell: pwsh
+        run: ./packaging/windows/build.ps1 -Version "${{ needs.version.outputs.version }}" -ToolsDir build/imobiledevice
+      - name: Vérification de l'appli fabriquée
+        shell: pwsh
+        run: |
+          $app = "dist\SmartphoneBackup"
+          foreach ($f in "SmartphoneBackup.exe", "tools\imobiledevice\idevicebackup2.exe",
+                         "tools\imobiledevice\idevice_id.exe", "tools\imobiledevice\ideviceinfo.exe") {
+            if (-not (Test-Path "$app\$f")) { throw "Manquant : $f" }
+          }
+          Get-ChildItem dist\*.zip, dist\*setup.exe | Format-Table Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartphoneBackup-windows-${{ needs.version.outputs.version }}
+          path: |
+            dist/*.zip
+            dist/*setup.exe
+      - name: Release (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*setup.exe
+
+  linux:
+    needs: [tests, version]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances de fabrication
+        run: sudo apt-get update && sudo apt-get install -y python3-venv libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 file
+      - name: AppImage
+        run: ./build_appimage.sh
+      - name: Nom avec la version
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          mv dist/Smartphone_Backup-x86_64.AppImage "dist/SmartphoneBackup-$v-linux-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartphoneBackup-linux-${{ needs.version.outputs.version }}
+          path: dist/*.AppImage
+      - name: Release (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.AppImage

@@ -7,6 +7,8 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 
+from . import system
+
 SBIN = ("/usr/sbin", "/sbin", "/usr/bin", "/usr/local/sbin")
 UDEV_DIRS = ("/etc/udev/rules.d", "/lib/udev/rules.d", "/usr/lib/udev/rules.d")
 
@@ -35,9 +37,11 @@ class Prereq:
     check: callable
     pkgs: dict = field(default_factory=dict)  # gestionnaire -> paquet système
     pip: str = None        # paquet pip (utilisé si l'appli tourne dans un venv)
+    win_install: callable = None  # Windows : étape d'installation écrite en Python
+    win_label: str = ""           # Windows : texte affiché pour cette étape
 
 
-PREREQS = [
+PREREQS_LINUX = [
     Prereq("adb", "adb", "Communication avec le téléphone Android", "android", True,
            lambda: bool(_which("adb")),
            {"apt": "adb", "dnf": "android-tools", "pacman": "android-tools"}),
@@ -56,6 +60,85 @@ PREREQS = [
            {"apt": "python3-mutagen", "dnf": "python3-mutagen", "pacman": "python-mutagen"},
            pip="mutagen"),
 ]
+
+# ------------------------------------------------------------ Windows
+PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+APPLE_DEVICES_ID = "9NP83LWLPZ9K"  # « Apple Devices » sur le Microsoft Store
+APPLE_SERVICE = "Apple Mobile Device Service"
+
+
+def _apple_service():
+    """Service Apple qui gère l'iPhone en USB (installé par Apple Devices ou iTunes)."""
+    try:
+        return system.run(["sc", "query", APPLE_SERVICE], capture_output=True, timeout=5).returncode == 0
+    except Exception:
+        return False
+
+
+def download_adb(log):
+    """Télécharge les outils Android officiels de Google dans le dossier de l'appli (sans droits admin)."""
+    import urllib.request
+    import zipfile
+    dest = system.data_dir()
+    os.makedirs(dest, exist_ok=True)
+    tmp = os.path.join(dest, "platform-tools.zip")
+    log(f"Téléchargement de {PLATFORM_TOOLS_URL}")
+    with urllib.request.urlopen(PLATFORM_TOOLS_URL, timeout=60) as r, open(tmp, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        got, shown = 0, -1
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            got += len(chunk)
+            pct = got * 100 // total if total else -1
+            if pct >= shown + 20:
+                log(f"  {pct} %")
+                shown = pct
+    log("Extraction…")
+    with zipfile.ZipFile(tmp) as z:
+        z.extractall(dest)  # crée dest/platform-tools/
+    os.remove(tmp)
+    system.setup_path()
+    log("adb installé dans " + os.path.join(dest, "platform-tools"))
+
+
+def install_apple_devices(log):
+    """Installe « Apple Devices » (pilote + service iPhone, sans iTunes) depuis le Microsoft Store."""
+    if system.which("winget"):
+        cmd = ["winget", "install", "--id", APPLE_DEVICES_ID, "--source", "msstore",
+               "--accept-package-agreements", "--accept-source-agreements"]
+        log("$ " + " ".join(cmd))
+        r = system.run(cmd, capture_output=True, text=True, errors="replace")
+        for line in (r.stdout or "").splitlines():
+            if line.strip() and not set(line.strip()) <= set("-\\|/ █▒"):
+                log(line.rstrip())
+        if r.returncode == 0 or _apple_service():
+            log("Apple Devices est installé. Débranchez puis rebranchez l'iPhone.")
+            return
+        log("winget n'a pas pu l'installer : ouverture du Microsoft Store.")
+    os.startfile("ms-windows-store://search/?query=Apple%20Devices")  # noqa: S606 (Windows)
+    raise RuntimeError("Installez « Apple Devices » depuis le Microsoft Store (gratuit), "
+                       "puis cliquez sur « Vérifier à nouveau ».")
+
+
+PREREQS_WIN = [
+    Prereq("adb", "adb (outils Android de Google)", "Communication avec le téléphone Android",
+           "android", True, lambda: bool(system.which("adb")),
+           win_install=download_adb, win_label="Télécharger adb depuis le site de Google (environ 7 Mo)"),
+    Prereq("imobile", "libimobiledevice", "Sauvegarde et détection de l'iPhone (fourni avec l'appli)",
+           "iphone", True, lambda: all(system.which(t) for t in ("idevicebackup2", "idevice_id", "ideviceinfo"))),
+    Prereq("apple", "Pilote iPhone (Apple Devices)",
+           "Service Apple qui gère l'iPhone en USB. Fourni par l'application gratuite « Apple Devices » "
+           "(Microsoft Store) : inutile de l'ouvrir, et iTunes n'est pas nécessaire.",
+           "iphone", True, _apple_service,
+           win_install=install_apple_devices, win_label="Installer « Apple Devices » depuis le Microsoft Store"),
+    Prereq("mutagen", "mutagen (Python)", "Nomme la musique iPhone par artiste / album / titre",
+           "iphone", False, lambda: importlib.util.find_spec("mutagen") is not None),
+]
+
+PREREQS = PREREQS_WIN if system.IS_WIN else PREREQS_LINUX
 
 MANAGERS = {
     "apt": ("apt-get", "sudo apt install {}",
@@ -115,6 +198,16 @@ def install_plan(items):
     Les paquets système passent par pkexec (fenêtre de mot de passe) ; mutagen passe par pip
     quand l'appli tourne dans son environnement virtuel.
     """
+    if system.IS_WIN:
+        cmds = [p.win_install for p in items if p.win_install]
+        shown = "\n".join(p.win_label for p in items if p.win_install)
+        manual = [p.name for p in items if not p.win_install]
+        note = ("« Installer maintenant » s'en occupe ; Windows peut demander une confirmation."
+                if cmds else "")
+        if manual:
+            note += (" " if note else "") + ("Élément manquant dans l'appli : " + ", ".join(manual)
+                                             + ". Réinstallez Smartphone Backup.")
+        return cmds, shown, note
     pm = package_manager()
     use_pip = _in_venv()
     sys_pkgs, pip_pkgs, unknown = [], [], []

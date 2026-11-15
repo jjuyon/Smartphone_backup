@@ -84,7 +84,7 @@ QFrame#bannerWarn { background: #2b2416; border: 1px solid #5a4620; border-radiu
 """
 
 # flèches des compteurs (le chemin des icônes n'est connu qu'au lancement)
-STYLE += "".join(f"QSpinBox::{d}-arrow {{ image: url(\"{ICONS}/arrow-{d}.svg\"); width: 10px; height: 10px; }}\n"
+STYLE += "".join(f"QSpinBox::{d}-arrow {{ image: url(\"{ICONS.replace(os.sep, '/')}/arrow-{d}.svg\"); width: 10px; height: 10px; }}\n"
                  for d in ("up", "down"))
 
 GREEN, ORANGE, RED, GREY = "#3ddc84", "#f0b429", "#ff8a8a", "#8b93a1"

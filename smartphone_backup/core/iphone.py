@@ -16,6 +16,8 @@ import sqlite3
 import subprocess
 from datetime import datetime
 
+from . import system
+
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".gif", ".dng", ".tif",
              ".tiff", ".webp", ".mov", ".mp4", ".m4v"}
 MUSIC_EXT = {".mp3", ".m4a", ".aac", ".flac", ".wav", ".aif", ".aiff", ".alac", ".m4b"}
@@ -36,7 +38,7 @@ def list_iphones():
     if not shutil.which("idevice_id"):
         return []
     try:
-        out = subprocess.run(["idevice_id", "-l"], capture_output=True, text=True, timeout=3).stdout
+        out = system.run(["idevice_id", "-l"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3).stdout
     except Exception:
         return []
     devs = []
@@ -45,8 +47,8 @@ def list_iphones():
             continue
         if not _names.get(udid) and shutil.which("ideviceinfo"):
             try:
-                r = subprocess.run(["ideviceinfo", "-u", udid, "-k", "DeviceName"],
-                                   capture_output=True, text=True, timeout=3)
+                r = system.run(["ideviceinfo", "-u", udid, "-k", "DeviceName"],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3)
                 if r.returncode == 0 and r.stdout.strip():
                     _names[udid] = r.stdout.strip()
             except Exception:
@@ -231,7 +233,7 @@ def run_backup(dest, log, progress, cancel, holder, udid=None):
     os.makedirs(dest, exist_ok=True)
     log("Sauvegarde en cours (laissez l'iPhone branché et déverrouillé)…")
     cmd = ["idevicebackup2"] + (["-u", udid] if udid else []) + ["backup", dest]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+    p = system.popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
     holder.append(p)
     buf, last = b"", ""
     while True:

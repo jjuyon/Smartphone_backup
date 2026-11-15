@@ -74,5 +74,4 @@ smartphone_backup/core/procs.py      arrêt des processus lancés par l'appli à
 smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
 smartphone_backup/icons/             icônes SVG de l'appli
 build_appimage.sh          fabrication de l'AppImage
-anciens/                   scripts d'origine
 ```

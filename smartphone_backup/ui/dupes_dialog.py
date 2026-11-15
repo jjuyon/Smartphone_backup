@@ -45,15 +45,24 @@ def pixels(path):
     return sz.width() * sz.height() if sz.isValid() else 0
 
 
-def to_drop(kind, paths):
+def in_folder(path, folder):
+    return bool(folder) and photos._inside(os.path.abspath(path), os.path.abspath(folder))
+
+
+def to_drop(kind, paths, ref=""):
     """Exemplaires cochés par défaut : identiques → tous sauf le meilleur ; ressemblantes → seulement
     les versions en plus basse résolution que le meilleur (ex. copie WhatsApp réduite), jamais deux
-    photos de même taille (rafale, photos presque pareilles : à vous de choisir)."""
-    keep = dupes.keeper(paths)
+    photos de même taille (rafale, photos presque pareilles : à vous de choisir).
+    ref : dossier de référence, jamais coché ; s'il contient un exemplaire, c'est lui qui est gardé."""
+    in_ref = [p for p in paths if in_folder(p, ref)]
+    keep = dupes.keeper(in_ref or paths)
+    candidates = [p for p in paths if p != keep and p not in in_ref]
     if kind == "identiques":
-        return keep, {p for p in paths if p != keep}
+        return keep, set(candidates)
     best = pixels(keep)
-    return keep, {p for p in paths if p != keep and pixels(p) < best * 0.9}
+    # avec une référence, sa version suffit si l'autre n'est pas meilleure ; sinon il faut nettement moins bien
+    limit = best if in_ref else best * 0.9
+    return keep, {p for p in candidates if (pixels(p) <= limit if in_ref else pixels(p) < limit)}
 
 
 class DupeScanner(QThread):
@@ -61,16 +70,20 @@ class DupeScanner(QThread):
     step = Signal(str)
     done = Signal(object)
 
-    def __init__(self, sources, similar, method="checksum"):
+    def __init__(self, sources, similar, method="checksum", exclude=(), ref=""):
         super().__init__()
         self.sources, self.similar, self.method = sources, similar, method
+        self.exclude, self.ref = list(exclude), ref
         self.stop = False
 
     def run(self):
         cancel = lambda: self.stop  # noqa: E731
         span = (lambda a, b: lambda v: self.progress.emit(int(a + (b - a) * v / 100)))
         self.step.emit("Recherche des photos et vidéos…")
-        items = photos.scan(self.sources, None, span(0, 35), cancel, find_dupes=False)
+        ref_apart = self.ref and not any(in_folder(self.ref, s) for s in self.sources)
+        roots = self.sources + ([self.ref] if ref_apart else [])
+        exclude = [e for e in self.exclude if not in_folder(self.ref, e)]  # la référence n'est jamais exclue
+        items = photos.scan(roots, exclude, span(0, 35), cancel, find_dupes=False)
         by_path = {it.path: it for it in items}
         exact = dupes.exact_groups([(it.path, it.size) for it in items],
                                    span(35, 60 if self.similar else 100), cancel, self.method,
@@ -91,6 +104,8 @@ class DupeScanner(QThread):
                 merged.update(r for r in g if r in members)
                 groups.append(("ressemblantes", full))
             groups = [(k, g) for k, g in groups if not (k == "identiques" and g[0] in merged)]
+        if ref_apart:  # référence à part : seuls comptent ses doublons dans les dossiers analysés
+            groups = [(k, g) for k, g in groups if not all(in_folder(p, self.ref) for p in g)]
         if not self.stop:
             self.done.emit([(k, [by_path[p] for p in g]) for k, g in groups])
 
@@ -115,7 +130,10 @@ def remove_file(path, method, base):
     elif method == "delete":
         os.remove(path)
     else:
-        dest = unique(os.path.join(base, photos.DUPES_DIR, os.path.relpath(path, base)))
+        rel = os.path.relpath(path, base)
+        if rel.startswith(".."):  # fichier hors des dossiers analysés (dossier de référence à part)
+            rel = os.path.join("Autres", os.path.basename(path))
+        dest = unique(os.path.join(base, photos.DUPES_DIR, rel))
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.move(path, dest)
 
@@ -145,8 +163,9 @@ class Remover(QThread):
 
 
 class DuplicatesDialog(QDialog):
-    def __init__(self, parent, sources, android=False):
+    def __init__(self, parent, sources, android=False, exclude=(), root=""):
         super().__init__(parent)
+        self.exclude = list(exclude)
         self.setWindowTitle("Doublons")
         self.setObjectName("root")
         fit_to_screen(self, 980, 740)
@@ -157,6 +176,11 @@ class DuplicatesDialog(QDialog):
         self.stopping = []  # recherches abandonnées, gardées jusqu'à leur arrêt effectif
         self.changed = False  # des fichiers ont été retirés
         self.s = settings()
+        from .photo_sort_dialog import dest_key
+        self.ref_key = dest_key(root or self.base or "-", "ref")
+        self.ref = self.s.value(self.ref_key, "") or ""
+        if self.ref and not os.path.isdir(self.ref):
+            self.ref = ""
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 22, 24, 18)
@@ -196,6 +220,28 @@ class DuplicatesDialog(QDialog):
         self.b_go.setObjectName("primary")
         self.b_go.clicked.connect(self.go)
         mrow.addWidget(self.b_go)
+        rrow = QHBoxLayout()
+        rrow.addWidget(QLabel("Dossier de référence :"))
+        self.ref_label = label("", "hint")
+        self.ref_label.setWordWrap(True)
+        self.ref_label.setToolTip("Ses fichiers ne sont jamais cochés par la sélection automatique : en cas de "
+                                  "doublon, c'est son exemplaire qui est gardé et les autres qui sont retirés.\n"
+                                  "Il peut être dans les dossiers analysés ou ailleurs (ex. photothèque déjà "
+                                  "rangée).")
+        rrow.addWidget(self.ref_label, 1)
+        self.b_ref = QPushButton("Choisir…")
+        self.b_ref.clicked.connect(self.pick_ref)
+        self.b_noref = QPushButton("Aucun")
+        self.b_noref.clicked.connect(lambda: self.set_ref(""))
+        rrow.addWidget(self.b_ref)
+        rrow.addWidget(self.b_noref)
+        root.addLayout(rrow)
+        self.show_ref()
+        if self.exclude:
+            ex = label("Sous-dossiers exclus : " + ", ".join(os.path.basename(e) for e in self.exclude), "hint")
+            ex.setToolTip("\n".join(self.exclude))
+            ex.setWordWrap(True)
+            root.addWidget(ex)
         root.addLayout(mrow)
 
         self.status = label("", "hint")
@@ -296,16 +342,39 @@ class DuplicatesDialog(QDialog):
         self.stopping.clear()
         super().done(r)
 
+    def show_ref(self):
+        self.ref_label.setText(self.ref or "aucun : le meilleur exemplaire de chaque groupe est gardé")
+        self.b_noref.setEnabled(bool(self.ref))
+
+    def pick_ref(self):
+        from .folder_picker import pick_folder
+        path = pick_folder(self, "Dossier de référence", self.ref or self.base)
+        if path:
+            self.set_ref(os.path.abspath(path))
+
+    def set_ref(self, path):
+        if path == self.ref:
+            return
+        self.ref = path
+        self.s.setValue(self.ref_key, path)
+        self.show_ref()
+        if self.groups and not self.scanner:
+            # dans les dossiers analysés : la liste reste valable, seule la sélection change
+            if not path or any(in_folder(path, s) for s in self.sources):
+                self.fill()
+                return
+        self.options_changed(force=True)
+
     def go(self):
         if self.scanner:
             self.reset("Recherche arrêtée. Cliquez sur « Démarrer la recherche » pour recommencer.")
         else:
             self.start_scan()
 
-    def options_changed(self):
+    def options_changed(self, *_, force=False):
         self.s.setValue("dupes/similar", "true" if self.similar.isChecked() else "false")
         self.s.setValue("dupes/compare", self.compare.currentData())
-        if self.scanner or self.groups:
+        if self.scanner or self.groups or force:
             self.reset("Options modifiées : cliquez sur « Démarrer la recherche » pour relancer.")
 
     def reset(self, message):
@@ -330,7 +399,8 @@ class DuplicatesDialog(QDialog):
         self.bar.setValue(0)
         self.bar.show()
         self.status.setText("Recherche des photos et vidéos…")
-        self.scanner = DupeScanner(self.sources, self.similar.isChecked(), self.compare.currentData())
+        self.scanner = DupeScanner(self.sources, self.similar.isChecked(), self.compare.currentData(),
+                                   self.exclude, self.ref)
         self.scanner.progress.connect(self.bar.setValue)
         self.scanner.step.connect(self.status.setText)
         self.scanner.done.connect(self.scanned)
@@ -357,7 +427,7 @@ class DuplicatesDialog(QDialog):
         self.tree.blockSignals(True)
         self.tree.clear()
         for kind, items in self.groups:
-            keep, drop = to_drop(kind, [it.path for it in items])
+            keep, drop = to_drop(kind, [it.path for it in items], self.ref)
             title = f"{os.path.basename(keep)} — {len(items)} exemplaires {kind}"
             g = QTreeWidgetItem([title + (" (à vérifier)" if kind == "ressemblantes" else "")])
             g.setData(0, Qt.UserRole + 1, kind)
@@ -382,6 +452,9 @@ class DuplicatesDialog(QDialog):
 
     def folder_name(self, path):
         """Dossier relatif au dossier analysé (plus court que le chemin complet)."""
+        if in_folder(path, self.ref):
+            rel = os.path.relpath(os.path.dirname(path), self.ref)
+            return "★ Référence" + ("" if rel == "." else " / " + rel)
         rel = os.path.relpath(os.path.dirname(path), self.base) if self.base else os.path.dirname(path)
         return "(dossier analysé)" if rel == "." else rel
 
@@ -393,7 +466,7 @@ class DuplicatesDialog(QDialog):
         for i in range(self.tree.topLevelItemCount()):
             g = self.tree.topLevelItem(i)
             kids = self.children(g)
-            drop = to_drop(g.data(0, Qt.UserRole + 1), [c.data(0, Qt.UserRole) for c in kids])[1] \
+            drop = to_drop(g.data(0, Qt.UserRole + 1), [c.data(0, Qt.UserRole) for c in kids], self.ref)[1] \
                 if auto else set()
             for c in kids:
                 c.setCheckState(0, Qt.Checked if c.data(0, Qt.UserRole) in drop else Qt.Unchecked)
@@ -504,7 +577,7 @@ class DuplicatesDialog(QDialog):
     def lock(self, busy):
         """Pendant le retrait des fichiers : rien d'autre ne peut être lancé."""
         for w in (self.tree, self.similar, self.compare, self.b_go, self.b_auto, self.b_none,
-                  self.method, self.b_remove):
+                  self.method, self.b_remove, self.b_ref, self.b_noref):
             w.setEnabled(not busy)
         self.b_close.setText("Arrêter" if busy else "Fermer")
 

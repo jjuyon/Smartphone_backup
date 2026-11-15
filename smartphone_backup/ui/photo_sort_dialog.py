@@ -48,9 +48,16 @@ class Scanner(QThread):
             self.done.emit(items)
 
 
-def dest_key(root):
-    """Destination mémorisée pour chaque dossier de départ."""
-    return "sort/out_" + hashlib.md5(os.path.abspath(root).encode()).hexdigest()[:12]
+def dest_key(root, kind="out"):
+    """Réglage mémorisé pour chaque dossier de départ (destination, sous-dossiers exclus…)."""
+    return f"sort/{kind}_" + hashlib.md5(os.path.abspath(root).encode()).hexdigest()[:12]
+
+
+def folder_list(s, key):
+    v = s.value(key, [])
+    if isinstance(v, str):  # QSettings renvoie une chaîne pour une liste d'un élément
+        v = [v] if v else []
+    return [p for p in (v or []) if p]
 
 
 class SortPanel(QWidget):
@@ -81,13 +88,21 @@ class SortPanel(QWidget):
         self.no_src = label("", "hint")
         self.no_src.setWordWrap(True)
         l.addWidget(self.no_src)
+        self.excl_box = QVBoxLayout()  # sous-dossiers exclus : une ligne « chemin [Retirer] » chacun
+        self.excl_box.setSpacing(4)
+        l.addLayout(self.excl_box)
+        self.excludes = []
         b_add = QPushButton("Ajouter un dossier…")
         b_add.clicked.connect(self.pick_source)
         b_dupes = QPushButton("Rechercher les doublons…")
         b_dupes.setToolTip("Voir les photos et vidéos en double et les retirer avant de ranger")
         b_dupes.clicked.connect(self.open_dupes)
         row = QHBoxLayout()
+        b_excl = QPushButton("Exclure un sous-dossier…")
+        b_excl.setToolTip("Ignorer un dossier situé dans un des dossiers cochés (rangement et doublons)")
+        b_excl.clicked.connect(self.pick_exclude)
         row.addWidget(b_add)
+        row.addWidget(b_excl)
         row.addWidget(b_dupes)
         row.addStretch(1)
         l.addLayout(row)
@@ -226,6 +241,8 @@ class SortPanel(QWidget):
                              f"Le dossier « {root} » n'existe pas. Choisissez un dossier."))
         self.no_src.setVisible(not self.src_checks)
         self.dest.setText(self.s.value(dest_key(root), os.path.join(root, "Photos rangées")))
+        self.excludes = folder_list(self.s, dest_key(root, "excl"))
+        self.show_excludes()
         self.scan_key = None
         self.rescan()
 
@@ -260,6 +277,56 @@ class SortPanel(QWidget):
     def sources(self):
         return [p for cb, p in self.src_checks if cb.isChecked()]
 
+    # ------------------------------------------------------------- sous-dossiers exclus
+    def pick_exclude(self):
+        from .folder_picker import pick_folder
+        srcs = self.sources()
+        if not srcs:
+            return QMessageBox.information(self, "Exclure", "Cochez d'abord un dossier de photos.")
+        path = pick_folder(self, "Sous-dossier à exclure", srcs[0])
+        if not path:
+            return
+        path = os.path.abspath(path)
+        if not any(photos._inside(path, os.path.abspath(s)) and path != os.path.abspath(s) for s in srcs):
+            return QMessageBox.information(self, "Exclure", "Choisissez un dossier situé à l'intérieur d'un des "
+                                           "dossiers cochés (pour ignorer un dossier entier, décochez-le).")
+        if path not in self.excludes:
+            self.excludes.append(path)
+            self.save_excludes()
+
+    def drop_exclude(self, path):
+        self.excludes = [p for p in self.excludes if p != path]
+        self.save_excludes()
+
+    def save_excludes(self):
+        self.s.setValue(dest_key(self.root_dir, "excl"), self.excludes)
+        self.show_excludes()
+        self.rescan()
+
+    def show_excludes(self):
+        while self.excl_box.count():
+            w = self.excl_box.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        for path in self.excludes:
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            shown = path
+            for src in self.sources() or [self.root_dir]:
+                if src and photos._inside(path, os.path.abspath(src)):
+                    shown = os.path.join(os.path.basename(src.rstrip(os.sep)), os.path.relpath(path, src))
+            lab = label(f"Exclu : {shown}", "hint")
+            lab.setToolTip(path)
+            rl.addWidget(lab, 1)
+            b = QPushButton("Ne plus exclure")
+            b.clicked.connect(lambda _=False, p=path: self.drop_exclude(p))
+            rl.addWidget(b)
+            self.excl_box.addWidget(row)
+
+    def exclusions(self):
+        return [self.dest.text()] + self.excludes
+
     # ------------------------------------------------------------- analyse / aperçu
     def stop_scan(self):
         if self.scanner:
@@ -268,7 +335,7 @@ class SortPanel(QWidget):
             self.scanner = None
 
     def rescan(self, force=False):
-        key = (tuple(self.sources()), self.dest.text())
+        key = (tuple(self.sources()), self.dest.text(), tuple(self.excludes))
         if key == self.scan_key and not force:
             return
         self.scan_key = key
@@ -283,7 +350,7 @@ class SortPanel(QWidget):
         self.bar.setValue(0)
         self.bar.show()
         self.summary.setText("Lecture des dates de prise de vue…")
-        self.scanner = Scanner(self.sources(), self.dest.text())
+        self.scanner = Scanner(self.sources(), self.exclusions())
         self.scanner.progress.connect(self.bar.setValue)
         self.scanner.done.connect(self.scanned)
         self.scanner.start()
@@ -384,14 +451,15 @@ class SortPanel(QWidget):
             self.s.setValue("sort/" + {"gap_hours": "gap", "min_count": "min"}.get(k, k),
                             ("true" if v else "false") if isinstance(v, bool) else v)
         self.s.setValue("sort/mode", mode)
-        fresh = self.scan_key == (tuple(srcs), self.dest.text())
-        return dict(sources=srcs, dest=dest, mode=mode, options=o, items=self.items if fresh else None)
+        fresh = self.scan_key == (tuple(srcs), self.dest.text(), tuple(self.excludes))
+        return dict(sources=srcs, dest=dest, mode=mode, options=o, items=self.items if fresh else None,
+                    exclude=self.exclusions())
 
     def open_dupes(self):
         if not self.sources():
             return QMessageBox.information(self, "Doublons", "Cochez au moins un dossier de photos.")
         from .dupes_dialog import DuplicatesDialog
-        dlg = DuplicatesDialog(self, self.sources(), self.android)
+        dlg = DuplicatesDialog(self, self.sources(), self.android, self.excludes, self.root_dir)
         dlg.exec()
         dlg.stop_scan()
         dlg.deleteLater()  # libère la fenêtre tout de suite (évite un plantage de PySide à la sortie)
@@ -453,7 +521,7 @@ def start_sort(page, cfg):
         items = cfg["items"]
         if items is None:
             step("Lecture des dates de prise de vue…")
-            items = photos.scan(cfg["sources"], cfg["dest"], progress, cancelled)
+            items = photos.scan(cfg["sources"], cfg["exclude"], progress, cancelled)
             progress(0)
         step("Rangement des photos…")
         log(f"{len(items)} fichiers vers {cfg['dest']}")

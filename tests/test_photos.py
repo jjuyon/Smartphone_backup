@@ -119,3 +119,27 @@ def test_exact_groups_methods(tmp_path):
     assert sorted(map(sorted, dupes.exact_groups(files))) == [sorted([str(a), str(c)])]
     assert sorted(map(sorted, dupes.exact_groups(files, method="fast"))) == [sorted(map(str, (a, b, c)))]
     assert dupes.exact_groups(files, cancel=lambda: True) == []
+
+
+def test_scan_excludes_subfolders(tmp_path):
+    from smartphone_backup.core import photos
+    for d in ("A", "A/skip", "A/skip/deep", "A/keep"):
+        (tmp_path / d).mkdir()
+    for f in ("A/1.jpg", "A/skip/2.jpg", "A/skip/deep/3.jpg", "A/keep/4.jpg"):
+        (tmp_path / f).write_bytes(b"\xff\xd8" + f.encode())
+    items = photos.scan([str(tmp_path / "A")], [str(tmp_path / "A/skip")], lambda v: None, lambda: False)
+    assert sorted(os.path.basename(it.path) for it in items) == ["1.jpg", "4.jpg"]
+
+
+def test_reference_folder_never_dropped(tmp_path):
+    """Avec un dossier de référence, son exemplaire est gardé et jamais coché, même s'il serait moins bien noté."""
+    from smartphone_backup.ui.dupes_dialog import to_drop
+    ref = tmp_path / "Rangées"
+    paths = [str(tmp_path / "DCIM/Camera/a.jpg"), str(ref / "2024/a (1).jpg"), str(ref / "2024/a.jpg"),
+             str(tmp_path / "WhatsApp/a.jpg")]
+    keep, drop = to_drop("identiques", paths)
+    assert keep == paths[0]                      # sans référence : l'exemplaire de l'appareil photo
+    keep, drop = to_drop("identiques", paths, str(ref))
+    assert keep in paths[1:3] and drop == {paths[0], paths[3]}  # rien de coché dans la référence
+    keep, drop = to_drop("identiques", paths[1:3], str(ref))
+    assert drop == set()                          # doublons internes à la référence : jamais cochés

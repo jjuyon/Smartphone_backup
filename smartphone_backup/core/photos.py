@@ -227,16 +227,19 @@ def _inside(path, folder):
 
 def scan(sources, exclude, progress, cancel, find_dupes=True):
     """Liste les photos/vidéos des dossiers sources (sans les dossiers cachés, la corbeille de
-    synchronisation, les doublons mis de côté ni le dossier de destination).
+    synchronisation, les doublons mis de côté ni les dossiers exclus : destination, sous-dossiers
+    écartés par l'utilisateur ; exclude = chemin ou liste de chemins).
     find_dupes : marque (dup=True) les copies identiques, sauf le meilleur exemplaire."""
-    exclude = os.path.realpath(exclude) if exclude else None
+    if isinstance(exclude, str):
+        exclude = [exclude]
+    excl = [os.path.realpath(e) for e in (exclude or ()) if e]
     files, seen = [], set()
     for src in sources:
         for base, dirs, names in os.walk(src):
             if cancel():
                 return []
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in (TRASH, DUPES_DIR)
-                       and not (exclude and _inside(os.path.realpath(os.path.join(base, d)), exclude))]
+                       and not any(_inside(os.path.realpath(os.path.join(base, d)), e) for e in excl)]
             for n in names:
                 full = os.path.join(base, n)
                 real = os.path.realpath(full)

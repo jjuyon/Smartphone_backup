@@ -3,15 +3,15 @@ import subprocess
 
 from ..core import system
 
-from .qt import Qt, QThread, Signal
+from .qt import Qt, Signal
 from .qt import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from ..core import prereqs
-from .common import fit_to_screen, GREEN, ORANGE, RED, card, label, status_html
+from .common import GREEN, ORANGE, RED, Thread, card, fit_to_screen, label, status_html
 
 
-class Installer(QThread):
+class Installer(Thread):
     log = Signal(str)
     done = Signal(bool)
 

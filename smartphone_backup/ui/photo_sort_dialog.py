@@ -3,13 +3,13 @@
 import hashlib
 import os
 
-from .qt import Qt, QThread, Signal
+from .qt import Qt, Signal
 from .qt import (QButtonGroup, QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout, QLineEdit,
                  QMessageBox, QPushButton, QRadioButton, QSpinBox, QTreeWidget,
                  QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..core import photos
-from .common import ORANGE, card, fit_to_screen, label, progress_bar, scrollable, settings
+from .common import ORANGE, Thread, card, join, fit_to_screen, label, progress_bar, scrollable, settings
 
 
 def find_sources(root):
@@ -31,7 +31,7 @@ def find_sources(root):
     return found
 
 
-class Scanner(QThread):
+class Scanner(Thread):
     """Lit les dates de toutes les photos en arrière-plan."""
     progress = Signal(int)
     done = Signal(object)
@@ -331,7 +331,12 @@ class SortPanel(QWidget):
     def stop_scan(self):
         if self.scanner:
             self.scanner.stop = True
-            self.scanner.wait(10000)
+            try:
+                self.scanner.progress.disconnect()
+                self.scanner.done.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            join(self.scanner, 500)  # sinon il finit seul, en arrière-plan : ses résultats sont ignorés
             self.scanner = None
 
     def rescan(self, force=False):

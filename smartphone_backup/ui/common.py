@@ -201,7 +201,38 @@ class ClickableCard(QFrame):
 
 
 # ---------------------------------------------------------------- threads
-class TaskWorker(QThread):
+_threads = set()  # threads lancés : gardés jusqu'à leur fin, jamais détruits en cours d'exécution
+
+
+class Thread(QThread):
+    """QThread qui reste référencé tant qu'il tourne : l'abandonner (self.scanner = None…) ne peut plus
+    provoquer « QThread: Destroyed while thread is still running » (arrêt brutal de l'appli)."""
+
+    def start(self, *args):
+        _threads.difference_update([t for t in _threads if t.isFinished()])
+        _threads.add(self)
+        super().start(*args)
+
+
+def join(thread, timeout_ms=None):
+    """Attend la fin du thread sans bloquer Python : avec certaines versions de PySide2, QThread.wait()
+    garde le verrou de Python et le thread ne peut pas se terminer pendant l'attente."""
+    import time
+    end = None if timeout_ms is None else time.monotonic() + timeout_ms / 1000
+    while thread.isRunning():
+        if end is not None and time.monotonic() > end:
+            return False
+        time.sleep(0.01)
+    return True
+
+
+def join_all(timeout_ms=5000):
+    import time
+    end = time.monotonic() + timeout_ms / 1000
+    return all(join(t, max(0, (end - time.monotonic()) * 1000)) for t in list(_threads))
+
+
+class TaskWorker(Thread):
     """Exécute job(log, progress, step, cancelled) dans un thread."""
     log = Signal(str)
     progress = Signal(int)
@@ -226,7 +257,7 @@ class TaskWorker(QThread):
             self.error.emit(str(e))
 
 
-class DeviceWatcher(QThread):
+class DeviceWatcher(Thread):
     """Détecte les iPhone et Android branchés toutes les 3 s, sans bloquer l'interface."""
     changed = Signal(list, list)  # [(udid, nom)], [(serial, état, modèle)]
 

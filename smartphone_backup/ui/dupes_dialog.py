@@ -4,13 +4,13 @@ import os
 import shutil
 import subprocess
 
-from .qt import QFile, QImage, QImageReader, QPixmap, QSize, Qt, QThread, Signal
+from .qt import QFile, QImage, QImageReader, QPixmap, QSize, Qt, Signal
 from .qt import (QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
                  QPushButton, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..core import dupes, photos
 from ..core.iphone import unique
-from .common import GREEN, ORANGE, RED, card, fit_to_screen, label, progress_bar, settings
+from .common import GREEN, ORANGE, RED, Thread, join, card, fit_to_screen, label, progress_bar, settings
 
 KEEP_COLOR, DROP_COLOR = GREEN, RED
 
@@ -65,7 +65,7 @@ def to_drop(kind, paths, ref=""):
     return keep, {p for p in candidates if (pixels(p) <= limit if in_ref else pixels(p) < limit)}
 
 
-class DupeScanner(QThread):
+class DupeScanner(Thread):
     progress = Signal(int)
     step = Signal(str)
     done = Signal(object)
@@ -138,7 +138,7 @@ def remove_file(path, method, base):
         shutil.move(path, dest)
 
 
-class Remover(QThread):
+class Remover(Thread):
     """Retire les fichiers en arrière-plan (la fenêtre reste réactive, barre de progression)."""
     progress = Signal(int, int)      # fichiers traités, total
     done = Signal(object, object)    # chemins retirés, échecs
@@ -334,11 +334,11 @@ class DuplicatesDialog(QDialog):
     def done(self, r):
         if self.remover:  # fenêtre fermée pendant le retrait : on termine le fichier en cours
             self.remover.stop = True
-            self.remover.wait()
+            join(self.remover)
             self.remover = None
         self.stop_scan()
         for sc in list(self.stopping):
-            sc.wait()  # lecture interrompue au bloc suivant : quasi immédiat
+            join(sc, 5000)  # lecture interrompue au bloc suivant : quasi immédiat
         self.stopping.clear()
         super().done(r)
 

@@ -1,4 +1,5 @@
 """Fenêtre principale : accueil + écrans iPhone et Android dans une pile."""
+import os
 import signal
 import sys
 
@@ -8,6 +9,7 @@ from .qt import QApplication, QMessageBox, QStackedWidget
 from ..core import procs, system
 from .android_page import AndroidPage
 from .common import STYLE, DeviceWatcher, app_icon, dark_palette, fit_to_screen, scrollable
+from .common import join, join_all
 from .home import HomePage
 from .iphone_page import IphonePage
 from .photos_page import PhotosPage
@@ -89,9 +91,10 @@ class MainWindow(QStackedWidget):
         threads = [self.watcher] + [p.worker for p in self.pages.values() if p.worker]
         for _ in range(3):  # une tâche peut relancer une commande avant de voir l'annulation
             procs.kill_children()
-            if all(t.wait(2000) for t in threads):
+            if all(join(t, 2000) for t in threads):
                 break
         procs.kill_children()
+        join_all(3000)  # recherches abandonnées (photos, doublons) encore en train de s'arrêter
         if not self.adb_was_running and procs.adb_server_running():
             procs.stop_adb_server()  # serveur adb démarré par l'appli : on l'arrête aussi
 
@@ -129,4 +132,11 @@ def main():
     tick.timeout.connect(lambda: None)  # laisse Python traiter les signaux
     tick.start(300)
     w.show()
-    sys.exit(app.exec())
+    code = app.exec()
+    w.shutdown()
+    if not join_all(5000):
+        # une tâche bloquée (ex. disque débranché) : sortie immédiate plutôt qu'un arrêt brutal de Qt
+        # en détruisant un thread encore en cours
+        sys.stdout.flush()
+        os._exit(code)
+    sys.exit(code)

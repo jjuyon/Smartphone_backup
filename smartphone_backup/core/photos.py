@@ -14,6 +14,7 @@ import struct
 from dataclasses import dataclass
 from datetime import datetime
 
+from . import dupes
 from .android import TRASH
 from .iphone import already_there, unique
 
@@ -34,6 +35,7 @@ ORIGINS = {"camera": "Appareil photo", "screenshot": "Captures d'écran",
            "whatsapp": "WhatsApp", "other": "Autres images"}
 MODES = {"link": "Liens physiques : aucun espace disque en plus (recommandé)",
          "copy": "Copier", "move": "Déplacer"}
+DUPES_DIR = "_Doublons"  # doublons mis de côté par la fenêtre « Doublons »
 DATE_SOURCES = {"exif": "EXIF", "name": "nom du fichier", "video": "métadonnées vidéo",
                 "mtime": "date du fichier"}
 
@@ -47,6 +49,7 @@ class Item:
     video: bool
     origin: str
     how: str  # clé de DATE_SOURCES
+    dup: bool = False  # copie identique d'un autre fichier (un seul exemplaire est gardé)
 
 
 # ------------------------------------------------------------ dates
@@ -222,16 +225,17 @@ def _inside(path, folder):
     return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
-def scan(sources, exclude, progress, cancel):
+def scan(sources, exclude, progress, cancel, find_dupes=True):
     """Liste les photos/vidéos des dossiers sources (sans les dossiers cachés, la corbeille de
-    synchronisation ni le dossier de destination)."""
+    synchronisation, les doublons mis de côté ni le dossier de destination).
+    find_dupes : marque (dup=True) les copies identiques, sauf le meilleur exemplaire."""
     exclude = os.path.realpath(exclude) if exclude else None
     files, seen = [], set()
     for src in sources:
         for base, dirs, names in os.walk(src):
             if cancel():
                 return []
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d != TRASH
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in (TRASH, DUPES_DIR)
                        and not (exclude and _inside(os.path.realpath(os.path.join(base, d)), exclude))]
             for n in names:
                 full = os.path.join(base, n)
@@ -241,6 +245,7 @@ def scan(sources, exclude, progress, cancel):
                 seen.add(real)
                 files.append((full, os.path.relpath(full, os.path.dirname(src.rstrip(os.sep)))))
     items = []
+    span = 85 if find_dupes else 100
     for i, (full, rel) in enumerate(files):
         if cancel():
             return []
@@ -248,7 +253,14 @@ def scan(sources, exclude, progress, cancel):
         if it:
             items.append(it)
         if i % 50 == 0:
-            progress(i * 100 / max(len(files), 1))
+            progress(i * span / max(len(files), 1))
+    if find_dupes:
+        by_path = {it.path: it for it in items}
+        for g in dupes.exact_groups([(it.path, it.size) for it in items],
+                                    lambda v: progress(85 + v * 0.15), cancel):
+            keep = dupes.keeper(g)
+            for p in g:
+                by_path[p].dup = p != keep
     progress(100)
     return items
 
@@ -313,8 +325,10 @@ def new_name(it):
 
 
 def plan(items, structure="year_month", videos_apart=False, by_origin=False, rename=False,
-         gap_hours=8, min_count=5):
+         gap_hours=8, min_count=5, skip_dupes=False):
     """[(item, chemin relatif de destination)], trié par date."""
+    if skip_dupes:
+        items = [it for it in items if not it.dup]
     ev = events(items, gap_hours, min_count) if structure == "event" else {}
     out = []
     for it in sorted(items, key=lambda x: x.date):

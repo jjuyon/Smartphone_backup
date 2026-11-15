@@ -49,19 +49,31 @@ demandé via pkexec) ou donne la commande à copier. Sans agent polkit graphique
 - Copie incrémentale (taille + date), carte SD, dossier supplémentaire, mode miroir
   (les fichiers supprimés du téléphone vont dans `_Corbeille-sync`).
 
-### Rangement des photos
+## Photos (rangement et doublons)
 
-Bouton « Ranger les photos… » sur l'écran Android : classe les photos et vidéos sauvegardées
-dans un dossier séparé (par défaut `Photos rangées` dans la sauvegarde), avec un aperçu avant de lancer.
+Accessible depuis la carte « Photos » de l'accueil, pour n'importe quel dossier (ancienne sauvegarde,
+carte d'appareil photo, disque externe…), et depuis le bouton « Ranger les photos… » de l'écran Android.
+
+**Rangement** : classe les photos et vidéos dans un dossier séparé (par défaut `Photos rangées`),
+avec un aperçu avant de lancer.
 
 - Classements : par année puis mois, par année, par mois, par année puis jour, ou par
   événement (photos prises sans longue pause regroupées, pause et taille minimale réglables).
-- Options : séparer photos et vidéos, séparer par origine (appareil photo, captures d'écran,
-  WhatsApp, autres), renommer avec la date.
+- Options : ne pas ranger les doublons (activé par défaut, rien n'est supprimé), séparer photos
+  et vidéos, séparer par origine (appareil photo, captures d'écran, WhatsApp, autres), renommer avec la date.
 - Date de prise de vue : EXIF, sinon nom du fichier, sinon métadonnées vidéo, sinon date du fichier.
 - Méthode : liens physiques (aucun espace disque en plus, copie automatique si le disque ne
   les permet pas), copie, ou déplacement (la synchronisation suivante recopiera alors les photos).
 - Relancer le rangement n'ajoute que les nouvelles photos.
+
+**Doublons** : recherche les photos et vidéos présentes plusieurs fois, avec aperçu.
+
+- Copies identiques (même contenu, octet pour octet) ; en option, photos ressemblantes (même photo
+  redimensionnée ou recompressée, ex. renvoyée par WhatsApp), à vérifier.
+- Pré-sélection : on garde le meilleur exemplaire (plus grande résolution, dossier de l'appareil
+  photo plutôt que WhatsApp/Téléchargements, nom sans « (1) » ou « copie », le plus ancien).
+  Les photos ressemblantes de même taille (rafales) ne sont jamais pré-cochées.
+- Les fichiers retirés vont à la corbeille (récupérables) ou dans un dossier `_Doublons`.
 
 ## Structure
 ```
@@ -70,6 +82,7 @@ smartphone_backup/core/iphone.py     logique iPhone (sans interface)
 smartphone_backup/core/android.py    logique Android (sans interface)
 smartphone_backup/core/prereqs.py    vérification / installation des prérequis
 smartphone_backup/core/photos.py     rangement des photos par date
+smartphone_backup/core/dupes.py      détection des doublons (identiques, ressemblantes)
 smartphone_backup/core/procs.py      arrêt des processus lancés par l'appli à la fermeture
 smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
 smartphone_backup/icons/             icônes SVG de l'appli

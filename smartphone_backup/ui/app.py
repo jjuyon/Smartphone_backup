@@ -10,6 +10,7 @@ from .android_page import AndroidPage
 from .common import STYLE, DeviceWatcher, app_icon, dark_palette, fit_to_screen, scrollable
 from .home import HomePage
 from .iphone_page import IphonePage
+from .photos_page import PhotosPage
 from .prereqs_dialog import PrereqDialog
 
 TITLE = "Smartphone Backup"
@@ -20,11 +21,11 @@ class MainWindow(QStackedWidget):
         super().__init__()
         self.setWindowTitle(TITLE)
         self.home = HomePage()
-        self.pages = {"iphone": IphonePage(), "android": AndroidPage()}
+        self.pages = {"iphone": IphonePage(), "android": AndroidPage(), "photos": PhotosPage()}
         # chaque écran défile si la fenêtre est plus petite que lui (petits écrans)
         self.wraps = {}
         for p in [self.home, *self.pages.values()]:
-            # l'accueil défile en entier ; les écrans iPhone/Android gèrent leur défilement
+            # l'accueil défile en entier ; les autres écrans gèrent leur défilement
             # eux-mêmes pour garder leurs boutons visibles
             self.wraps[p] = scrollable(p) if p is self.home else p
             self.addWidget(self.wraps[p])

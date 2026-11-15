@@ -24,19 +24,22 @@ class HomePage(QWidget):
         t = label("Smartphone Backup", "bigtitle")
         t.setAlignment(Qt.AlignCenter)
         root.addWidget(t)
-        s = label("Quel téléphone voulez-vous sauvegarder ?", "subtitle")
+        s = label("Que voulez-vous faire ?", "subtitle")
         s.setAlignment(Qt.AlignCenter)
         root.addWidget(s)
         root.addSpacing(30)
 
         row = QHBoxLayout()
-        row.setSpacing(24)
+        row.setSpacing(18)
         self.st_iphone = self.choice(row, "iphone", "iPhone",
                                      "Sauvegarde complète puis rangement :\nphotos, documents, "
                                      "musique, notes vocales.")
         self.st_android = self.choice(row, "android", "Android",
                                       "Synchronisation incrémentale :\nphotos, musique, documents, "
                                       "WhatsApp, carte SD.")
+        self.st_photos = self.choice(row, "photos", "Photos",
+                                     "Ranger un dossier de photos par date et supprimer les doublons.")
+        self.st_photos.setText(status_html(GREY, "Sans téléphone"))
         root.addLayout(row)
         root.addStretch(2)
 
@@ -57,7 +60,7 @@ class HomePage(QWidget):
 
     def choice(self, row, key, title, desc):
         c = ClickableCard()
-        c.setMinimumSize(280, 220)
+        c.setMinimumSize(220, 220)
         lay = QVBoxLayout(c)
         lay.setContentsMargins(26, 26, 26, 22)
         lay.setSpacing(10)

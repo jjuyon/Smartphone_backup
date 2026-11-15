@@ -1,4 +1,5 @@
 """Fenêtre « Ranger les photos » : choix des dossiers, du classement et aperçu."""
+import hashlib
 import os
 
 from .qt import Qt, QThread, Signal
@@ -47,8 +48,9 @@ class Scanner(QThread):
 
 
 class PhotoSortDialog(QDialog):
-    def __init__(self, parent, backup_root):
+    def __init__(self, parent, backup_root, android=False):
         super().__init__(parent)
+        self.android = android
         self.setWindowTitle("Ranger les photos")
         self.setObjectName("root")
         fit_to_screen(self, 860, 780)
@@ -79,18 +81,26 @@ class PhotoSortDialog(QDialog):
         l.addWidget(label("Photos à ranger", "section"))
         self.src_box = QVBoxLayout()
         self.src_checks = []
-        for path, name, default in find_sources(backup_root):
+        found = find_sources(backup_root)
+        if not found and not android and os.path.isdir(backup_root):
+            found = [(backup_root, backup_root, True)]  # dossier quelconque : on le range en entier
+        for path, name, default in found:
             self.add_source(path, name, default)
         if not self.src_checks:
-            self.no_src = label("Aucune photo sauvegardée dans « %s ». Lancez d'abord une sauvegarde, "
-                                "ou ajoutez un dossier." % backup_root, "hint")
+            self.no_src = label(("Aucune photo sauvegardée dans « %s ». Lancez d'abord une sauvegarde, "
+                                 "ou ajoutez un dossier." if android else "Le dossier « %s » n'existe pas. "
+                                 "Ajoutez un dossier.") % backup_root, "hint")
             self.no_src.setWordWrap(True)
             self.src_box.addWidget(self.no_src)
         l.addLayout(self.src_box)
         b_add = QPushButton("Ajouter un dossier…")
         b_add.clicked.connect(self.pick_source)
+        b_dupes = QPushButton("Rechercher les doublons…")
+        b_dupes.setToolTip("Voir les photos et vidéos en double et les retirer avant de ranger")
+        b_dupes.clicked.connect(self.open_dupes)
         row = QHBoxLayout()
         row.addWidget(b_add)
+        row.addWidget(b_dupes)
         row.addStretch(1)
         l.addLayout(row)
         root.addWidget(c)
@@ -140,12 +150,14 @@ class PhotoSortDialog(QDialog):
         l.addWidget(label("Options", "section"))
         self.opt = {}
         for key, text, tip in (
+                ("skip_dupes", "Ne pas ranger les doublons",
+                 "une seule copie de chaque photo ou vidéo identique (rien n'est supprimé)"),
                 ("videos_apart", "Séparer photos et vidéos", "Photos / 2024 / …  et  Vidéos / 2024 / …"),
                 ("by_origin", "Séparer par origine",
                  "Appareil photo / Captures d'écran / WhatsApp / Autres images, puis la date"),
                 ("rename", "Renommer avec la date", "IMG_1234.jpg → 2024-03-15_14-32-05.jpg")):
             cb = QCheckBox(text)
-            cb.setChecked(self.s.value("sort/" + key, "false") == "true")
+            cb.setChecked(self.s.value("sort/" + key, "true" if key == "skip_dupes" else "false") == "true")
             cb.setToolTip(tip)
             self.opt[key] = cb
             row = QHBoxLayout()
@@ -159,7 +171,9 @@ class PhotoSortDialog(QDialog):
         # --- destination
         c, l = card()
         l.addWidget(label("Destination", "section"))
-        self.dest = folder_row(self, l, "Dossier", "sort/out", os.path.join(backup_root, "Photos rangées"))
+        # destination mémorisée pour chaque dossier de départ
+        key = "sort/out_" + hashlib.md5(os.path.abspath(backup_root).encode()).hexdigest()[:12]
+        self.dest = folder_row(self, l, "Dossier", key, os.path.join(backup_root, "Photos rangées"))
         row = QHBoxLayout()
         row.addWidget(label("Méthode", "hint"))
         self.mode = QComboBox()
@@ -299,13 +313,16 @@ class PhotoSortDialog(QDialog):
         for it in self.items:
             hows[it.how] = hows.get(it.how, 0) + 1
         sure = 100 - round(hows.get("mtime", 0) * 100 / len(self.items))
+        n_dup = sum(it.dup for it in self.items)
         def n(v):  # 12 345
             return f"{v:,}".replace(",", "\u202f")
         n_dirs = len({os.path.dirname(rel) for _, rel in steps})
         self.summary.setText(
             f"<b>{n(len(self.items) - n_vid)} photos et {n(n_vid)} vidéos</b>, de {years[0]} à {years[-1]}, "
             f"rangées dans {n(n_dirs)} dossiers. Date de prise de vue trouvée pour {sure} % des fichiers"
-            + (" ; les autres sont classés d'après la date du fichier." if sure < 100 else "."))
+            + (" ; les autres sont classés d'après la date du fichier." if sure < 100 else ".")
+            + (f"<br>{n(n_dup)} copies identiques " + ("ne seront pas rangées." if o["skip_dupes"] else
+               "seront rangées aussi (renommées _1, _2…).") if n_dup else ""))
 
     def fill_tree(self, steps):
         counts = {}
@@ -350,3 +367,41 @@ class PhotoSortDialog(QDialog):
         self.result_config = dict(sources=srcs, dest=dest, mode=mode, options=o,
                                   items=self.items if fresh else None)
         self.accept()
+
+    def open_dupes(self):
+        if not self.sources():
+            return QMessageBox.information(self, "Doublons", "Cochez au moins un dossier de photos.")
+        from .dupes_dialog import DuplicatesDialog
+        dlg = DuplicatesDialog(self, self.sources(), self.android)
+        dlg.exec()
+        dlg.stop_scan()
+        dlg.deleteLater()  # libère la fenêtre tout de suite (évite un plantage de PySide à la sortie)
+        if dlg.changed:  # des fichiers ont été retirés : nouvelle analyse
+            self.scan_key = None
+            self.rescan()
+
+
+def run_sort(page, root, android=False):
+    """Ouvre la fenêtre de rangement puis lance le rangement dans la page (progression, annulation)."""
+    dlg = PhotoSortDialog(page, root, android)
+    ok = dlg.exec()
+    dlg.stop_scan()  # aussi quand l'appli est fermée pendant que la fenêtre est ouverte
+    dlg.deleteLater()  # libère la fenêtre tout de suite (évite un plantage de PySide à la sortie)
+    if not ok:
+        return
+    cfg = dlg.result_config
+    if not page.ensure_dir(cfg["dest"]):
+        return
+
+    def job(log, progress, step, cancelled):
+        items = cfg["items"]
+        if items is None:
+            step("Lecture des dates de prise de vue…")
+            items = photos.scan(cfg["sources"], cfg["dest"], progress, cancelled)
+            progress(0)
+        step("Rangement des photos…")
+        log(f"{len(items)} fichiers vers {cfg['dest']}")
+        photos.apply(photos.plan(items, **cfg["options"]), cfg["dest"], cfg["mode"],
+                     log, progress, cancelled, cfg["sources"])
+
+    page.run_task(job, "Rangement des photos…")

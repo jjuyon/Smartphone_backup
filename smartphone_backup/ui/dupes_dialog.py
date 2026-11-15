@@ -211,6 +211,9 @@ class DuplicatesDialog(QDialog):
         self.method = QComboBox()
         self.method.addItem("Mettre à la corbeille", "trash")
         self.method.addItem(f"Déplacer dans « {photos.DUPES_DIR} »", "move")
+        self.method.addItem("Supprimer définitivement", "delete")
+        self.method.setToolTip("Corbeille et « _Doublons » : récupérable.\n"
+                               "Supprimer définitivement : place libérée tout de suite, sans retour possible.")
         self.method.setCurrentIndex(max(0, self.method.findData(self.s.value("dupes/method", "trash"))))
         btns.addWidget(self.method)
         b_close = QPushButton("Fermer")
@@ -418,10 +421,27 @@ class DuplicatesDialog(QDialog):
                                            f"({len(full)} groupe(s) entièrement cochés).")
         method = self.method.currentData()
         self.s.setValue("dupes/method", method)
-        where = "dans la corbeille" if method == "trash" else \
-            f"dans « {os.path.join(self.base, photos.DUPES_DIR)} »"
-        if QMessageBox.question(self, "Doublons", f"Placer {len(sel)} fichier(s) {where} ?") != QMessageBox.Yes:
-            return
+        if method == "delete":
+            total = human(sum(c.data(1, Qt.UserRole) for c in sel))
+            similar = sum(c.parent().data(0, Qt.UserRole + 1) == "ressemblantes" for c in sel)
+            text = (f"Supprimer définitivement {len(sel)} fichier(s) ({total}) ?\n\n"
+                    "Ils ne passeront pas par la corbeille : impossible de les récupérer ensuite.")
+            if similar:
+                text += (f"\n\nAttention : {similar} d'entre eux sont des photos « ressemblantes », pas "
+                         "identiques. Vérifiez-les dans l'aperçu avant de continuer.")
+            box = QMessageBox(QMessageBox.Warning, "Supprimer définitivement", text,
+                              QMessageBox.Yes | QMessageBox.Cancel, self)
+            box.button(QMessageBox.Yes).setText("Supprimer définitivement")
+            box.button(QMessageBox.Cancel).setText("Annuler")
+            box.setDefaultButton(QMessageBox.Cancel)
+            if box.exec() != QMessageBox.Yes:
+                return
+        else:
+            where = "dans la corbeille" if method == "trash" else \
+                f"dans « {os.path.join(self.base, photos.DUPES_DIR)} »"
+            if QMessageBox.question(self, "Doublons", f"Placer {len(sel)} fichier(s) {where} ?") \
+                    != QMessageBox.Yes:
+                return
         ok, failed = 0, []
         for c in sel:
             path = c.data(0, Qt.UserRole)
@@ -429,6 +449,8 @@ class DuplicatesDialog(QDialog):
                 if method == "trash":
                     if not to_trash(path):
                         raise OSError("corbeille indisponible")
+                elif method == "delete":
+                    os.remove(path)
                 else:
                     dest = unique(os.path.join(self.base, photos.DUPES_DIR, os.path.relpath(path, self.base)))
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -443,7 +465,7 @@ class DuplicatesDialog(QDialog):
             if self.tree.topLevelItem(i).childCount() < 2:
                 self.tree.takeTopLevelItem(i)
         self.update_summary()
-        msg = f"{ok} fichier(s) retiré(s)."
+        msg = f"{ok} fichier(s) " + ("supprimé(s) définitivement." if method == "delete" else "retiré(s).")
         if failed:
             msg += f"\n\n{len(failed)} échec(s) :\n" + "\n".join(failed[:10])
             if method == "trash":

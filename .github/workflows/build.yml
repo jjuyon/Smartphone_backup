@@ -22,8 +22,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Bibliothèques pour Qt (Linux)
@@ -39,7 +39,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: v
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -53,8 +53,8 @@ jobs:
     needs: [tests, version]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Outils iPhone (libimobiledevice via MSYS2)
@@ -70,7 +70,23 @@ jobs:
         run: choco install innosetup --no-progress -y
       - name: Fabrication
         shell: pwsh
-        run: ./packaging/windows/build.ps1 -Version "${{ needs.version.outputs.version }}" -ToolsDir build/imobiledevice
+        run: |
+          # en cas d'échec, la fin du journal est remontée en annotation (lisible sans connexion)
+          $ok = $true
+          try {
+            & ./packaging/windows/build.ps1 -Version "${{ needs.version.outputs.version }}" -ToolsDir build/imobiledevice *>&1 |
+              Tee-Object -FilePath build-windows.log
+            if ($LASTEXITCODE) { throw "code de sortie $LASTEXITCODE" }
+          } catch {
+            $ok = $false
+            "ERREUR : $_" | Tee-Object -FilePath build-windows.log -Append
+          }
+          if (-not $ok) {
+            $tail = (Get-Content build-windows.log -Tail 40) -join "`n"
+            $msg = $tail.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+            Write-Host "::error title=Fabrication Windows::$msg"
+            exit 1
+          }
       - name: Vérification de l'appli fabriquée
         shell: pwsh
         run: |
@@ -98,7 +114,7 @@ jobs:
     needs: [tests, version]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Dépendances de fabrication
         run: sudo apt-get update && sudo apt-get install -y python3-venv libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 file
       - name: AppImage

@@ -24,7 +24,9 @@ class MainWindow(QStackedWidget):
         # chaque écran défile si la fenêtre est plus petite que lui (petits écrans)
         self.wraps = {}
         for p in [self.home, *self.pages.values()]:
-            self.wraps[p] = scrollable(p)
+            # l'accueil défile en entier ; les écrans iPhone/Android gèrent leur défilement
+            # eux-mêmes pour garder leurs boutons visibles
+            self.wraps[p] = scrollable(p) if p is self.home else p
             self.addWidget(self.wraps[p])
         for p in self.pages.values():
             p.back.connect(self.go_home)

@@ -249,9 +249,20 @@ class BasePage(QWidget):
         super().__init__()
         self.worker = None
         self.errored = False
-        self.root = QVBoxLayout(self)
-        self.root.setContentsMargins(26, 18, 26, 24)
+        # contenu défilant + barre de boutons fixe en bas (toujours visible sur petit écran)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        body = QWidget()
+        self.root = QVBoxLayout(body)
+        self.root.setContentsMargins(26, 18, 26, 10)
         self.root.setSpacing(14)
+        self.scroll = scrollable(body)
+        outer.addWidget(self.scroll, 1)
+        self.footer = QHBoxLayout()
+        self.footer.setContentsMargins(26, 10, 26, 18)
+        self.footer.setSpacing(10)
+        outer.addLayout(self.footer)
 
         self.b_back = QPushButton("← Accueil")
         self.b_back.setObjectName("back")
@@ -300,7 +311,7 @@ class BasePage(QWidget):
 
     def add_buttons(self, actions, out_edit):
         """actions : [(texte, callback, principal?)] ; ajoute aussi « Ouvrir le dossier » et « Annuler »."""
-        btns = QHBoxLayout()
+        btns = self.footer
         self.action_buttons = []
         for text, cb, primary in actions:
             b = QPushButton(text)
@@ -318,7 +329,6 @@ class BasePage(QWidget):
         self.b_cancel.setEnabled(False)
         self.b_cancel.clicked.connect(self.cancel)
         btns.addWidget(self.b_cancel)
-        self.root.addLayout(btns)
 
     def busy(self):
         return bool(self.worker and self.worker.isRunning())
@@ -335,6 +345,8 @@ class BasePage(QWidget):
         self.worker.error.connect(self.on_error)
         self.worker.finished.connect(self.on_finished)
         self.set_busy(True)
+        sb = self.scroll.verticalScrollBar()  # petit écran : montre la progression
+        sb.setValue(sb.maximum())
         self.worker.start()
 
     def set_busy(self, busy):

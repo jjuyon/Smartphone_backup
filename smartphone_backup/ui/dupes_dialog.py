@@ -108,6 +108,42 @@ def to_trash(path):
     return False
 
 
+def remove_file(path, method, base):
+    if method == "trash":
+        if not to_trash(path):
+            raise OSError("corbeille indisponible")
+    elif method == "delete":
+        os.remove(path)
+    else:
+        dest = unique(os.path.join(base, photos.DUPES_DIR, os.path.relpath(path, base)))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(path, dest)
+
+
+class Remover(QThread):
+    """Retire les fichiers en arrière-plan (la fenêtre reste réactive, barre de progression)."""
+    progress = Signal(int, int)      # fichiers traités, total
+    done = Signal(object, object)    # chemins retirés, échecs
+
+    def __init__(self, paths, method, base):
+        super().__init__()
+        self.paths, self.method, self.base = paths, method, base
+        self.stop = False
+
+    def run(self):
+        removed, failed = [], []
+        for i, path in enumerate(self.paths):
+            if self.stop:
+                break
+            try:
+                remove_file(path, self.method, self.base)
+                removed.append(path)
+            except OSError as e:
+                failed.append(f"{path} : {e}")
+            self.progress.emit(i + 1, len(self.paths))
+        self.done.emit(removed, failed)
+
+
 class DuplicatesDialog(QDialog):
     def __init__(self, parent, sources, android=False):
         super().__init__(parent)
@@ -117,6 +153,7 @@ class DuplicatesDialog(QDialog):
         self.sources = [s for s in sources if os.path.isdir(s)]
         self.base = os.path.commonpath(self.sources) if self.sources else ""
         self.scanner = None
+        self.remover = None
         self.stopping = []  # recherches abandonnées, gardées jusqu'à leur arrêt effectif
         self.changed = False  # des fichiers ont été retirés
         self.s = settings()
@@ -216,8 +253,8 @@ class DuplicatesDialog(QDialog):
                                "Supprimer définitivement : place libérée tout de suite, sans retour possible.")
         self.method.setCurrentIndex(max(0, self.method.findData(self.s.value("dupes/method", "trash"))))
         btns.addWidget(self.method)
-        b_close = QPushButton("Fermer")
-        b_close.clicked.connect(self.accept)
+        b_close = self.b_close = QPushButton("Fermer")
+        b_close.clicked.connect(self.close_clicked)
         self.b_remove = QPushButton("Retirer la sélection")
         self.b_remove.setObjectName("danger")
         self.b_remove.clicked.connect(self.remove)
@@ -242,7 +279,17 @@ class DuplicatesDialog(QDialog):
             self.stopping.append(sc)
             sc.finished.connect(lambda sc=sc: sc in self.stopping and self.stopping.remove(sc))
 
+    def close_clicked(self):
+        if self.remover:  # arrêt après le fichier en cours ; la liste est mise à jour
+            self.remover.stop = True
+        else:
+            self.accept()
+
     def done(self, r):
+        if self.remover:  # fenêtre fermée pendant le retrait : on termine le fichier en cours
+            self.remover.stop = True
+            self.remover.wait()
+            self.remover = None
         self.stop_scan()
         for sc in list(self.stopping):
             sc.wait()  # lecture interrompue au bloc suivant : quasi immédiat
@@ -442,34 +489,51 @@ class DuplicatesDialog(QDialog):
             if QMessageBox.question(self, "Doublons", f"Placer {len(sel)} fichier(s) {where} ?") \
                     != QMessageBox.Yes:
                 return
-        ok, failed = 0, []
-        for c in sel:
-            path = c.data(0, Qt.UserRole)
-            try:
-                if method == "trash":
-                    if not to_trash(path):
-                        raise OSError("corbeille indisponible")
-                elif method == "delete":
-                    os.remove(path)
-                else:
-                    dest = unique(os.path.join(self.base, photos.DUPES_DIR, os.path.relpath(path, self.base)))
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    shutil.move(path, dest)
-                ok += 1
-                c.parent().removeChild(c)
-            except OSError as e:
-                failed.append(f"{path} : {e}")
-        self.changed = self.changed or ok > 0
-        # groupes réduits à un seul fichier : plus de doublon
+        self.removing = method
+        verb = {"trash": "Mise à la corbeille", "move": "Déplacement", "delete": "Suppression"}[method]
+        self.remove_verb = verb
+        self.lock(True)
+        self.bar.setValue(0)
+        self.bar.show()
+        self.status.setText(f"{verb} : 0 / {len(sel)} fichiers…")
+        self.remover = Remover([c.data(0, Qt.UserRole) for c in sel], method, self.base)
+        self.remover.progress.connect(self.remove_progress)
+        self.remover.done.connect(self.removed)
+        self.remover.start()
+
+    def lock(self, busy):
+        """Pendant le retrait des fichiers : rien d'autre ne peut être lancé."""
+        for w in (self.tree, self.similar, self.compare, self.b_go, self.b_auto, self.b_none,
+                  self.method, self.b_remove):
+            w.setEnabled(not busy)
+        self.b_close.setText("Arrêter" if busy else "Fermer")
+
+    def remove_progress(self, n, total):
+        self.bar.setValue(int(n * 100 / max(total, 1)))
+        self.status.setText(f"{self.remove_verb} : {n} / {total} fichiers…")
+
+    def removed(self, removed, failed):
+        method, self.remover = self.removing, None
+        self.bar.hide()
+        self.lock(False)
+        gone = set(removed)
+        self.tree.blockSignals(True)
         for i in reversed(range(self.tree.topLevelItemCount())):
-            if self.tree.topLevelItem(i).childCount() < 2:
+            g = self.tree.topLevelItem(i)
+            for c in self.children(g):
+                if c.data(0, Qt.UserRole) in gone:
+                    g.removeChild(c)
+            if g.childCount() < 2:  # groupe réduit à un seul fichier : plus de doublon
                 self.tree.takeTopLevelItem(i)
+        self.tree.blockSignals(False)
+        self.changed = self.changed or bool(removed)
         self.update_summary()
+        ok = len(removed)
         msg = f"{ok} fichier(s) " + ("supprimé(s) définitivement." if method == "delete" else "retiré(s).")
         if failed:
             msg += f"\n\n{len(failed)} échec(s) :\n" + "\n".join(failed[:10])
             if method == "trash":
                 msg += f"\n\nEssayez « Déplacer dans {photos.DUPES_DIR} »."
+        n = self.tree.topLevelItemCount()
+        self.status.setText("Plus aucun doublon ✓" if not n else f"{n} groupe(s) de doublons restant(s).")
         QMessageBox.information(self, "Doublons", msg)
-        if not self.tree.topLevelItemCount():
-            self.status.setText("Plus aucun doublon ✓")

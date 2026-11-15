@@ -458,7 +458,7 @@ def start_sort(page, cfg):
         step("Rangement des photos…")
         log(f"{len(items)} fichiers vers {cfg['dest']}")
         photos.apply(photos.plan(items, **cfg["options"]), cfg["dest"], cfg["mode"],
-                     log, progress, cancelled, cfg["sources"])
+                     log, progress, cancelled, cfg["sources"], step)
 
     page.run_task(job, "Rangement des photos…")
 

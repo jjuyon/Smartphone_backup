@@ -344,11 +344,20 @@ def plan(items, structure="year_month", videos_apart=False, by_origin=False, ren
 
 
 # ------------------------------------------------------------ rangement
-def apply(steps, dest_root, mode, log, progress, cancel, sources=()):
+def apply(steps, dest_root, mode, log, progress, cancel, sources=(), step=lambda t: None):
     """mode : link (liens physiques, copie si impossible), copy ou move."""
+    import time
     done = skipped = errors = 0
     link_ok = mode == "link"
+    verb_ing = {"link": "Rangement", "copy": "Copie", "move": "Déplacement"}[mode]
+    total = len(steps)
+    shown = 0.0
     for i, (it, rel) in enumerate(steps):
+        now = time.monotonic()
+        if now - shown > 0.2 or i == total - 1:  # texte mis à jour 5 fois par seconde au plus
+            shown = now
+            progress(i * 100 / max(total, 1))
+            step(f"{verb_ing} des photos : {i + 1} / {total} fichiers")
         if cancel():
             log("Annulé.")
             break
@@ -374,8 +383,6 @@ def apply(steps, dest_root, mode, log, progress, cancel, sources=()):
         except OSError as e:
             errors += 1
             log(f"  Erreur : {it.path} : {e}")
-        if i % 20 == 0:
-            progress(i * 100 / max(len(steps), 1))
     if mode == "move":
         for src in sources:  # dossiers vidés par le déplacement
             for base, _, _ in sorted(os.walk(src), key=lambda w: -len(w[0])):

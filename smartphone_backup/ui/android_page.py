@@ -1,7 +1,7 @@
 """Écran Android : synchronisation via adb."""
 import os
 
-from .qt import QCheckBox, QComboBox, QHBoxLayout, QLineEdit
+from .qt import QCheckBox, QGridLayout, QComboBox, QHBoxLayout, QLineEdit
 
 from ..core import android
 from .common import GREEN, GREY, ORANGE, RED, BasePage, card, folder_row, label, status_html
@@ -36,15 +36,15 @@ class AndroidPage(BasePage):
 
         c, l = card()
         l.addWidget(label("Contenu à copier", "section"))
-        grid = QHBoxLayout()
+        grid = QGridLayout()
         self.opts = {}
-        for key, text in (("photos", "Photos et vidéos"), ("music", "Musique"),
+        for i, (key, text) in enumerate((("photos", "Photos et vidéos"), ("music", "Musique"),
                           ("docs", "Documents et téléchargements"), ("voice", "Enregistrements"),
-                          ("whatsapp", "Médias WhatsApp")):
+                          ("whatsapp", "Médias WhatsApp"))):
             cb = QCheckBox(text)
             cb.setChecked(True)
             self.opts[key] = cb
-            grid.addWidget(cb)
+            grid.addWidget(cb, i // 3, i % 3)
         l.addLayout(grid)
         row = QHBoxLayout()
         row.addWidget(label("Autre dossier", "hint"))

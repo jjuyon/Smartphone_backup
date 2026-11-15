@@ -4,8 +4,8 @@ import os
 from .qt import QSettings, Qt, QThread, QUrl, Signal
 from .qt import event_pos
 from .qt import QColor, QDesktopServices, QIcon, QPalette
-from .qt import (QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
+from .qt import (QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                               QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
 _icons = {}
@@ -67,6 +67,7 @@ QScrollBar::handle:horizontal { background: #2d323b; border-radius: 4px; min-wid
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 QFrame#banner { background: #1b1e24; border: 1px solid #272b33; border-radius: 12px; }
+QScrollArea#pageScroll, QScrollArea#pageScroll > QWidget > QWidget { background: #111317; }
 QFrame#bannerWarn { background: #2b2416; border: 1px solid #5a4620; border-radius: 12px; }
 """
 
@@ -75,7 +76,34 @@ GREEN, ORANGE, RED, GREY = "#3ddc84", "#f0b429", "#ff8a8a", "#8b93a1"
 
 
 def settings():
-    return QSettings("SynchroSmartphone", "SynchroSmartphone")
+    s = QSettings("SmartphoneBackup", "SmartphoneBackup")
+    if not s.allKeys():  # reprend les réglages de l'ancien nom de l'appli
+        old = QSettings("SynchroSmartphone", "SynchroSmartphone")
+        for k in old.allKeys():
+            s.setValue(k, old.value(k))
+    return s
+
+
+def fit_to_screen(w, width, height):
+    """Taille de départ souhaitée, réduite si l'écran est plus petit (ex. 1280×800)."""
+    scr = w.screen() if hasattr(w, "screen") else None
+    scr = scr or QApplication.primaryScreen()
+    if scr:
+        g = scr.availableGeometry()
+        width = min(width, g.width() - 40)
+        height = min(height, g.height() - 60)  # place pour la barre de titre
+    w.resize(width, height)
+
+
+def scrollable(page):
+    """Met une page dans une zone défilante : la fenêtre peut alors être plus petite que son contenu."""
+    sa = QScrollArea()
+    sa.setObjectName("pageScroll")
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    sa.setWidget(page)
+    return sa
 
 
 def dark_palette():
@@ -243,7 +271,7 @@ class BasePage(QWidget):
         l.addWidget(self.bar)
         self.logbox = QPlainTextEdit()
         self.logbox.setReadOnly(True)
-        self.logbox.setMinimumHeight(150)
+        self.logbox.setMinimumHeight(90)
         l.addWidget(self.logbox)
         self.root.addWidget(c, 1)
 

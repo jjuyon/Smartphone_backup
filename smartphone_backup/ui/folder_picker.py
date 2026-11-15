@@ -15,7 +15,7 @@ from .qt import (QDialog, QFileIconProvider, QFileSystemModel, QHBoxLayout, QInp
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                                QSplitter, QTreeView, QVBoxLayout)
 
-from .common import app_icon, label
+from .common import fit_to_screen, app_icon, label
 from .qt import to_bytes
 
 NETWORK_FS = {"cifs", "smb3", "smbfs", "nfs", "nfs4", "fuse.sshfs", "fuse.rclone", "davfs",
@@ -96,7 +96,7 @@ class FolderPicker(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setObjectName("root")
-        self.resize(900, 560)
+        fit_to_screen(self, 900, 560)
         self.history, self.chosen = [], ""
         self.devices_sig = None
 

@@ -6,7 +6,7 @@ from .qt import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from ..core import prereqs
-from .common import GREEN, ORANGE, RED, card, label, status_html
+from .common import fit_to_screen, GREEN, ORANGE, RED, card, label, status_html
 
 
 class Installer(QThread):
@@ -44,7 +44,7 @@ class PrereqDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Prérequis")
         self.setObjectName("root")
-        self.resize(720, 560)
+        fit_to_screen(self, 720, 560)
         self.target = target
         self.installer = None
 

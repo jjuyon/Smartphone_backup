@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchro Smartphone : sauvegarde / synchronisation d'un iPhone ou d'un Android sous Linux."""
+"""Smartphone Backup : sauvegarde / synchronisation d'un iPhone ou d'un Android sous Linux."""
 import os
 import sys
 
@@ -15,7 +15,7 @@ if getattr(sys, "frozen", False):
 else:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from synchro.ui.app import main  # noqa: E402
+from smartphone_backup.ui.app import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

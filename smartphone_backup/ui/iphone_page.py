@@ -1,7 +1,7 @@
 """Écran iPhone : sauvegarde idevicebackup2 puis rangement."""
 import os
 
-from .qt import QCheckBox, QHBoxLayout
+from .qt import QCheckBox, QGridLayout, QHBoxLayout
 
 from ..core import iphone
 from .common import GREEN, GREY, ORANGE, RED, BasePage, card, folder_row, label, status_html
@@ -25,14 +25,14 @@ class IphonePage(BasePage):
 
         c, l = card()
         l.addWidget(label("Contenu à récupérer", "section"))
-        grid = QHBoxLayout()
+        grid = QGridLayout()
         self.opts = {}
-        for key, text in (("photos", "Photos et vidéos"), ("docs", "Documents"),
-                          ("music", "Musique"), ("voice", "Notes vocales")):
+        for i, (key, text) in enumerate((("photos", "Photos et vidéos"), ("docs", "Documents"),
+                          ("music", "Musique"), ("voice", "Notes vocales"))):
             cb = QCheckBox(text)
             cb.setChecked(True)
             self.opts[key] = cb
-            grid.addWidget(cb)
+            grid.addWidget(cb, i // 2, i % 2)
         l.addLayout(grid)
         l.addWidget(label("La sauvegarde de l'iPhone doit être non chiffrée. Les fichiers déjà "
                           "rangés ne sont pas recopiés.", "hint"))

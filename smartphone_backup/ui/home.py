@@ -16,7 +16,7 @@ class HomePage(QWidget):
         root.setContentsMargins(40, 40, 40, 30)
         root.setSpacing(10)
         root.addStretch(1)
-        t = label("Synchro Smartphone", "bigtitle")
+        t = label("Smartphone Backup", "bigtitle")
         t.setAlignment(Qt.AlignCenter)
         root.addWidget(t)
         s = label("Quel téléphone voulez-vous sauvegarder ?", "subtitle")

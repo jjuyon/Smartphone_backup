@@ -1,4 +1,4 @@
-# Synchro Smartphone
+# Smartphone Backup
 
 Application Linux (Qt) pour sauvegarder / synchroniser un **iPhone** ou un **Android**.
 Au démarrage, un écran d'accueil propose le choix du téléphone et indique en direct
@@ -10,7 +10,7 @@ comme en Wayland : thème sombre et icônes sont fournis par l'appli.
 ## AppImage (recommandé pour une autre machine)
 
 ```bash
-./build_appimage.sh            # produit dist/Synchro_Smartphone-x86_64.AppImage
+./build_appimage.sh            # produit dist/Smartphone_Backup-x86_64.AppImage
 ```
 Copiez le fichier sur l'autre PC, rendez-le exécutable (`chmod +x`) et lancez-le.
 L'AppImage contient Python, Qt et l'appli ; elle nécessite une glibc au moins aussi récente
@@ -29,9 +29,9 @@ et après). Pour un processeur plus ancien (Core 2 Duo, MacBook 2008…), utilis
 - récent → venv avec PySide6 (pip) ;
 - ancien → Qt de la distribution (PySide6, ou PySide2/Qt 5 sur Ubuntu 24.04), via apt/dnf/pacman.
 `./install.sh --systeme` force ce second mode. L'appli fonctionne avec Qt 6 comme avec Qt 5
-(`synchro/ui/qt.py`).
+(`smartphone_backup/ui/qt.py`).
 
-Lancement : menu « Synchro Smartphone », ou `./lancer.sh`.
+Lancement : menu « Smartphone Backup », ou `./lancer.sh`.
 
 Les prérequis sont vérifiés au démarrage (bandeau en bas de l'accueil). S'il en manque,
 le bouton « Aide à l'installation » les installe (apt, dnf ou pacman, mot de passe
@@ -51,12 +51,12 @@ demandé via pkexec) ou donne la commande à copier. Sans agent polkit graphique
 
 ## Structure
 ```
-synchro_smartphone.py      point d'entrée
-synchro/core/iphone.py     logique iPhone (sans interface)
-synchro/core/android.py    logique Android (sans interface)
-synchro/core/prereqs.py    vérification / installation des prérequis
-synchro/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
-synchro/icons/             icônes SVG de l'appli
+main.py                              point d'entrée
+smartphone_backup/core/iphone.py     logique iPhone (sans interface)
+smartphone_backup/core/android.py    logique Android (sans interface)
+smartphone_backup/core/prereqs.py    vérification / installation des prérequis
+smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
+smartphone_backup/icons/             icônes SVG de l'appli
 build_appimage.sh          fabrication de l'AppImage
 anciens/                   scripts d'origine
 ```

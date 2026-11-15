@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fabrique dist/Synchro_Smartphone-x86_64.AppImage (un seul fichier, sans installation).
+# Fabrique dist/Smartphone_Backup-x86_64.AppImage (un seul fichier, sans installation).
 #
 #   ./build_appimage.sh
 #
@@ -11,7 +11,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD="$DIR/build"
 APPDIR="$BUILD/AppDir"
 ARCH="$(uname -m)"
-OUT="$DIR/dist/Synchro_Smartphone-$ARCH.AppImage"
+OUT="$DIR/dist/Smartphone_Backup-$ARCH.AppImage"
 TOOL="$BUILD/appimagetool-$ARCH.AppImage"
 
 echo "== Environnement de build =="
@@ -22,34 +22,34 @@ echo "== Environnement de build =="
 echo "== PyInstaller =="
 rm -rf "$BUILD/pyi" "$BUILD/work" "$APPDIR"
 "$BUILD/venv/bin/pyinstaller" --noconfirm --clean --log-level WARN \
-    --name synchro-smartphone --windowed \
+    --name smartphone-backup --windowed \
     --distpath "$BUILD/pyi" --workpath "$BUILD/work" --specpath "$BUILD" \
     --paths "$DIR" \
-    --add-data "$DIR/synchro/icons:synchro/icons" \
+    --add-data "$DIR/smartphone_backup/icons:smartphone_backup/icons" \
     --exclude-module tkinter \
-    "$DIR/synchro_smartphone.py"
+    "$DIR/main.py"
 
 echo "== AppDir =="
 mkdir -p "$APPDIR/usr/bin"
-cp -a "$BUILD/pyi/synchro-smartphone/." "$APPDIR/usr/bin/"
+cp -a "$BUILD/pyi/smartphone-backup/." "$APPDIR/usr/bin/"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/synchro-smartphone" "$@"
+exec "$HERE/usr/bin/smartphone-backup" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
-cat > "$APPDIR/synchro-smartphone.desktop" <<'EOF'
+cat > "$APPDIR/smartphone-backup.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=Synchro Smartphone
+Name=Smartphone Backup
 Comment=Sauvegarder un iPhone ou un Android
-Exec=synchro-smartphone
-Icon=synchro-smartphone
+Exec=smartphone-backup
+Icon=smartphone-backup
 Terminal=false
 Categories=Utility;
 EOF
 # icône PNG 256 px à partir du SVG
-QT_QPA_PLATFORM=offscreen "$BUILD/venv/bin/python" - "$DIR/synchro/icons/app.svg" "$APPDIR/synchro-smartphone.png" <<'EOF'
+QT_QPA_PLATFORM=offscreen "$BUILD/venv/bin/python" - "$DIR/smartphone_backup/icons/app.svg" "$APPDIR/smartphone-backup.png" <<'EOF'
 import sys
 from PySide6.QtGui import QGuiApplication, QImage, QPainter, Qt
 from PySide6.QtSvg import QSvgRenderer
@@ -61,7 +61,7 @@ QSvgRenderer(sys.argv[1]).render(p)
 p.end()
 img.save(sys.argv[2])
 EOF
-ln -sf synchro-smartphone.png "$APPDIR/.DirIcon"
+ln -sf smartphone-backup.png "$APPDIR/.DirIcon"
 
 echo "== appimagetool =="
 if [ ! -x "$TOOL" ]; then

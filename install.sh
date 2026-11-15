@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installe Synchro Smartphone (depuis les sources) pour l'utilisateur courant.
+# Installe Smartphone Backup (depuis les sources) pour l'utilisateur courant.
 #
 #   ./install.sh            choix automatique
 #   ./install.sh --systeme  force le Qt de la distribution (vieux processeur, ou sans pip)
@@ -74,30 +74,31 @@ if [ "$MODE" = pip ]; then
     PY="$DIR/.venv/bin/python"
 else
     PY="/usr/bin/python3"
-    "$PY" -c "import sys; sys.path.insert(0, '$DIR'); from synchro.ui import qt; print('   Qt', 6 if qt.QT6 else 5, 'OK')"
+    "$PY" -c "import sys; sys.path.insert(0, '$DIR'); from smartphone_backup.ui import qt; print('   Qt', 6 if qt.QT6 else 5, 'OK')"
 fi
 
 cat > "$DIR/lancer.sh" <<EOF
 #!/usr/bin/env bash
-exec "$PY" "$DIR/synchro_smartphone.py" "\$@"
+exec "$PY" "$DIR/main.py" "\$@"
 EOF
 chmod +x "$DIR/lancer.sh"
 
 # ------------------------------------------------------------ menu
 echo "== Raccourci dans le menu =="
 mkdir -p "$HOME/.local/share/applications"
-cat > "$HOME/.local/share/applications/synchro-smartphone.desktop" <<EOF
+rm -f "$HOME/.local/share/applications/synchro-smartphone.desktop"  # ancien nom
+cat > "$HOME/.local/share/applications/smartphone-backup.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Synchro Smartphone
+Name=Smartphone Backup
 Comment=Sauvegarder un iPhone ou un Android
 Exec=$DIR/lancer.sh
-Icon=$DIR/synchro/icons/app.svg
+Icon=$DIR/smartphone_backup/icons/app.svg
 Terminal=false
 Categories=Utility;
 EOF
 
 echo
-echo "Terminé. Lancez « Synchro Smartphone » depuis le menu, ou : $DIR/lancer.sh"
+echo "Terminé. Lancez « Smartphone Backup » depuis le menu, ou : $DIR/lancer.sh"
 echo "Les outils des téléphones (adb, libimobiledevice…) s'installent depuis l'appli"
 echo "(bandeau « Aide à l'installation » sur l'écran d'accueil)."

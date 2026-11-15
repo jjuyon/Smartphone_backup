@@ -1,5 +1,5 @@
 """Smartphone Backup : sauvegarde iPhone / Android et rangement des photos (Linux, Windows)."""
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 try:  # version exacte écrite par la fabrication (ex. « 1.0.0-dev.3 »), absente des sources
     from ._build import VERSION as __version__  # noqa: F401

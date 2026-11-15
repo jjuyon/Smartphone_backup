@@ -83,6 +83,8 @@ class MainWindow(QStackedWidget):
         for p in self.pages.values():
             if p.busy():
                 p.cancel()
+        for p in self.pages.values():
+            p.stop_background()
         self.watcher.requestInterruption()
         threads = [self.watcher] + [p.worker for p in self.pages.values() if p.worker]
         for _ in range(3):  # une tâche peut relancer une commande avant de voir l'annulation

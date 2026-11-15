@@ -335,6 +335,9 @@ class BasePage(QWidget):
     def busy(self):
         return bool(self.worker and self.worker.isRunning())
 
+    def stop_background(self):
+        """Arrête les analyses en arrière-plan propres à l'écran (à la fermeture de l'appli)."""
+
     def run_task(self, job, first_step, on_cancel=None):
         self.logbox.clear()
         self.bar.setValue(0)

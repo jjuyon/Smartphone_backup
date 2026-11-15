@@ -1,9 +1,14 @@
-"""Écran « Photos » : ranger et dédoublonner n'importe quel dossier, sans téléphone."""
+"""Écran « Photos » : ranger et dédoublonner n'importe quel dossier, sans téléphone.
+
+Mêmes options de classement que le rangement de l'écran Android (formulaire SortPanel partagé),
+affichées directement dans l'écran.
+"""
 import os
 
-from .qt import QStandardPaths
+from .qt import QStandardPaths, QTimer
 
 from .common import GREY, BasePage, card, folder_row, label, status_html
+from .photo_sort_dialog import SortPanel, start_sort
 
 
 class PhotosPage(BasePage):
@@ -23,25 +28,39 @@ class PhotosPage(BasePage):
         hint.setWordWrap(True)
         l.addWidget(hint)
         self.root.addWidget(c)
+        self.folder_card = c
 
-        c, l = card()
-        l.addWidget(label("Que faire ?", "section"))
-        for title, text in (
-                ("Rechercher les doublons", "Trouve les photos et vidéos présentes plusieurs fois (copies "
-                 "identiques, et si vous le souhaitez photos redimensionnées ou recompressées), puis les met "
-                 "à la corbeille ou de côté après votre vérification."),
-                ("Ranger les photos", "Les classe par année, mois, jour ou événement dans un nouveau dossier, "
-                 "sans doublons ; les originaux ne bougent pas, sauf si vous choisissez « Déplacer ».")):
-            l.addWidget(label(f"<b>{title}</b>"))
-            t = label(text, "hint")
-            t.setWordWrap(True)
-            l.addWidget(t)
-        self.root.addWidget(c)
+        self.panel = SortPanel(self)
+        self.root.addWidget(self.panel)
 
         self.add_progress()
-        self.add_buttons([("Ranger les photos…", self.sort, True),
-                          ("Rechercher les doublons…", self.find_dupes, False)], self.folder)
+        self.add_buttons([("Ranger les photos", self.sort, True)], self.panel.dest)
         self.status.setText(status_html(GREY, "Aucun téléphone nécessaire"))
+        self.panel.ready.connect(self.update_go)
+
+        # dossier tapé à la main : on attend la fin de la saisie avant d'analyser
+        self.debounce = QTimer(self)
+        self.debounce.setSingleShot(True)
+        self.debounce.setInterval(700)
+        self.debounce.timeout.connect(self.apply_folder)
+        self.folder.textChanged.connect(lambda *_: self.debounce.start())
+        self.shown_once = False
+
+    def showEvent(self, e):
+        # analyse seulement quand l'écran est ouvert (pas au démarrage de l'appli)
+        super().showEvent(e)
+        if not self.shown_once:
+            self.shown_once = True
+            self.apply_folder()
+
+    def apply_folder(self):
+        path = self.folder.text().strip()
+        if os.path.isdir(os.path.expanduser(path)) or not path:
+            self.panel.set_root(path)
+
+    def update_go(self, ok):
+        if not self.busy():
+            self.action_buttons[0].setEnabled(ok)
 
     def prereqs_ok(self):
         return True  # n'utilise ni adb ni libimobiledevice
@@ -49,24 +68,20 @@ class PhotosPage(BasePage):
     def update_devices(self, _iphones, _androids):
         pass
 
-    def check_folder(self):
-        path = self.folder.text().strip()
-        if not os.path.isdir(path):
-            self.info("Choisissez un dossier de photos existant.")
-            return None
-        return path
+    def set_busy(self, busy):
+        super().set_busy(busy)
+        self.panel.setEnabled(not busy)
+        self.folder_card.setEnabled(not busy)
+
+    def on_finished(self):
+        super().on_finished()
+        self.panel.rescan(force=True)  # les fichiers ont pu changer (déplacement, nouveaux rangés)
+
+    def stop_background(self):
+        self.debounce.stop()
+        self.panel.stop_scan()
 
     def sort(self):
-        path = self.check_folder()
-        if path:
-            from .photo_sort_dialog import run_sort
-            run_sort(self, path)
-
-    def find_dupes(self):
-        path = self.check_folder()
-        if path:
-            from .dupes_dialog import DuplicatesDialog
-            dlg = DuplicatesDialog(self, [path])
-            dlg.exec()
-            dlg.stop_scan()
-            dlg.deleteLater()  # libère la fenêtre tout de suite (évite un plantage de PySide à la sortie)
+        cfg = self.panel.config()
+        if cfg:
+            start_sort(self, cfg)

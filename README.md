@@ -52,7 +52,9 @@ demandé via pkexec) ou donne la commande à copier. Sans agent polkit graphique
 ## Photos (rangement et doublons)
 
 Accessible depuis la carte « Photos » de l'accueil, pour n'importe quel dossier (ancienne sauvegarde,
-carte d'appareil photo, disque externe…), et depuis le bouton « Ranger les photos… » de l'écran Android.
+carte d'appareil photo, disque externe…), avec les options affichées directement dans l'écran, et
+depuis le bouton « Ranger les photos… » de l'écran Android. Les deux partagent le même formulaire,
+donc exactement les mêmes options.
 
 **Rangement** : classe les photos et vidéos dans un dossier séparé (par défaut `Photos rangées`),
 avec un aperçu avant de lancer.

@@ -74,6 +74,8 @@ class SortPanel(QWidget):
         # --- sources
         c, l = card()
         l.addWidget(label("Photos à ranger", "section"))
+        self.top_box = QVBoxLayout()  # choix du dossier de départ (écran Photos)
+        l.addLayout(self.top_box)
         self.src_box = QVBoxLayout()
         l.addLayout(self.src_box)
         self.no_src = label("", "hint")
@@ -214,7 +216,8 @@ class SortPanel(QWidget):
         self.src_checks = []
         found = find_sources(root)
         if not found and not self.android and os.path.isdir(root):
-            found = [(root, root, True)]  # dossier quelconque : on le range en entier
+            # dossier quelconque : on le range en entier
+            found = [(root, "Tout le dossier, sous-dossiers compris" if self.top_box.count() else root, True)]
         for path, name, default in found:
             self.add_source(path, name, default)
         self.no_src.setText("" if self.src_checks else

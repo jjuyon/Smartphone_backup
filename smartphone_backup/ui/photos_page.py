@@ -7,7 +7,7 @@ import os
 
 from .qt import QStandardPaths, QTimer
 
-from .common import GREY, BasePage, card, folder_row, label, status_html
+from .common import GREY, BasePage, folder_row, label, status_html
 from .photo_sort_dialog import SortPanel, start_sort
 
 
@@ -20,17 +20,15 @@ class PhotosPage(BasePage):
                                                "quel dossier.")
         pictures = QStandardPaths.writableLocation(QStandardPaths.PicturesLocation) \
             or os.path.expanduser("~")
-        c, l = card()
-        l.addWidget(label("Dossier de photos", "section"))
-        self.folder = folder_row(self, l, "Dossier", "photos/folder", pictures)
-        hint = label("Par exemple une ancienne sauvegarde, la carte mémoire d'un appareil photo, un disque "
-                     "externe… Les sous-dossiers sont inclus.", "hint")
-        hint.setWordWrap(True)
-        l.addWidget(hint)
-        self.root.addWidget(c)
-        self.folder_card = c
-
         self.panel = SortPanel(self)
+        # dossier de départ en tête de la carte « Photos à ranger » du formulaire
+        top = self.panel.top_box
+        self.folder = folder_row(self, top, "Dossier", "photos/folder", pictures)
+        hint = label("Par exemple une ancienne sauvegarde, la carte mémoire d'un appareil photo, un disque "
+                     "externe… Cochez ci-dessous ce qu'il faut ranger ; « Ajouter un dossier… » pour en "
+                     "ranger plusieurs ensemble.", "hint")
+        hint.setWordWrap(True)
+        top.addWidget(hint)
         self.root.addWidget(self.panel)
 
         self.add_progress()
@@ -71,7 +69,6 @@ class PhotosPage(BasePage):
     def set_busy(self, busy):
         super().set_busy(busy)
         self.panel.setEnabled(not busy)
-        self.folder_card.setEnabled(not busy)
 
     def on_finished(self):
         super().on_finished()

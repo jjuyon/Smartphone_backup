@@ -1,4 +1,5 @@
 """Fenêtre « Doublons » : recherche des photos et vidéos en double, puis nettoyage."""
+import html
 import os
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ from .qt import (QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox
 
 from ..core import dupes, photos
 from ..core.iphone import unique
-from .common import GREEN, ORANGE, RED, fit_to_screen, label, progress_bar, settings
+from .common import GREEN, ORANGE, RED, card, fit_to_screen, label, progress_bar, settings
 
 KEEP_COLOR, DROP_COLOR = GREEN, RED
 
@@ -167,17 +168,17 @@ class DuplicatesDialog(QDialog):
         root.addWidget(self.bar)
 
         split = QSplitter()
+        split.setHandleWidth(12)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Fichier (coché = à retirer)", "Taille", "Date", "Dossier"])
-        self.tree.setColumnWidth(0, 300)
-        self.tree.setColumnWidth(1, 80)
-        self.tree.setColumnWidth(2, 130)
+        self.tree.setColumnWidth(0, 280)
+        self.tree.setColumnWidth(1, 90)
+        self.tree.setColumnWidth(2, 150)
+        self.tree.header().setStretchLastSection(True)  # « Dossier » occupe le reste de la largeur
         self.tree.itemChanged.connect(self.item_changed)
         self.tree.currentItemChanged.connect(self.show_preview)
         split.addWidget(self.tree)
-        side = QWidget()
-        sl = QVBoxLayout(side)
-        sl.setContentsMargins(12, 0, 0, 0)
+        side, sl = card()  # panneau d'aperçu encadré, visible même vide
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setMinimumSize(220, 220)
@@ -189,7 +190,8 @@ class DuplicatesDialog(QDialog):
         sl.addStretch(1)
         split.addWidget(side)
         split.setStretchFactor(0, 1)
-        split.setSizes([700, 240])
+        split.setStretchFactor(1, 0)
+        split.setSizes([10000, 260])
         root.addWidget(split, 1)
 
         self.summary = QLabel()
@@ -261,8 +263,7 @@ class DuplicatesDialog(QDialog):
         self.stop_scan()
         self.tree.clear()
         self.groups = []
-        self.preview.clear()
-        self.info.clear()
+        self.clear_preview()
         self.summary.clear()
         self.bar.hide()
         for b in (self.b_auto, self.b_none, self.b_remove):
@@ -317,7 +318,7 @@ class DuplicatesDialog(QDialog):
             g.setFirstColumnSpanned(True)  # après l'ajout dans l'arbre, sinon sans effet
             for it in sorted(items, key=lambda i: i.path != keep):
                 c = QTreeWidgetItem([os.path.basename(it.path), human(it.size),
-                                     f"{it.date:%d/%m/%Y %H:%M}", os.path.dirname(it.path)])
+                                     f"{it.date:%d/%m/%Y %H:%M}", self.folder_name(it.path)])
                 c.setData(0, Qt.UserRole, it.path)
                 c.setData(1, Qt.UserRole, it.size)
                 c.setToolTip(3, it.path)
@@ -328,6 +329,11 @@ class DuplicatesDialog(QDialog):
             g.setExpanded(len(self.groups) <= 300)
         self.tree.blockSignals(False)
         self.update_summary()
+
+    def folder_name(self, path):
+        """Dossier relatif au dossier analysé (plus court que le chemin complet)."""
+        rel = os.path.relpath(os.path.dirname(path), self.base) if self.base else os.path.dirname(path)
+        return "(dossier analysé)" if rel == "." else rel
 
     def children(self, g):
         return [g.child(i) for i in range(g.childCount())]
@@ -375,17 +381,21 @@ class DuplicatesDialog(QDialog):
         self.b_remove.setEnabled(bool(sel))
         self.b_remove.setText(f"Retirer {len(sel)} fichier(s)" if sel else "Retirer la sélection")
 
+    def clear_preview(self):
+        self.preview.clear()
+        self.preview.setText("Aperçu\n\nCliquez sur un fichier\npour le voir ici")
+        self.info.clear()
+
     def show_preview(self, cur, _prev=None):
         path = cur.data(0, Qt.UserRole) if cur else None
         if not path:
-            self.preview.clear()
-            self.info.clear()
+            self.clear_preview()
             return
         r = QImageReader(path)
         r.setAutoTransform(True)
         size = r.size()
         if size.isValid():
-            size.scale(QSize(240, 240), Qt.KeepAspectRatio)
+            size.scale(QSize(220, 220), Qt.KeepAspectRatio)
             r.setScaledSize(size)
         img = r.read()
         if img.isNull():
@@ -394,7 +404,9 @@ class DuplicatesDialog(QDialog):
             self.preview.setPixmap(QPixmap.fromImage(img))
         dims = QImageReader(path).size()
         self.info.setText((f"{dims.width()} × {dims.height()} px<br>" if dims.isValid() else "")
-                          + f"{cur.text(1)} · {cur.text(2)}<br>{path}")
+                          + f"{cur.text(1)} · {cur.text(2)}<br>"
+                          # coupure possible après chaque séparateur : chemin lisible sur plusieurs lignes
+                          + html.escape(path).replace(os.sep, os.sep + "\u200b"))
 
     # ------------------------------------------------------------- nettoyage
     def remove(self):

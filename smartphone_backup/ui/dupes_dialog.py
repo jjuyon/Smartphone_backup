@@ -9,7 +9,7 @@ from .qt import (QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QMessageBox
 
 from ..core import dupes, photos
 from ..core.iphone import unique
-from .common import GREEN, ORANGE, RED, fit_to_screen, label, settings
+from .common import GREEN, ORANGE, RED, fit_to_screen, label, progress_bar, settings
 
 KEEP_COLOR, DROP_COLOR = GREEN, RED
 
@@ -60,9 +60,9 @@ class DupeScanner(QThread):
     step = Signal(str)
     done = Signal(object)
 
-    def __init__(self, sources, similar):
+    def __init__(self, sources, similar, method="checksum"):
         super().__init__()
-        self.sources, self.similar = sources, similar
+        self.sources, self.similar, self.method = sources, similar, method
         self.stop = False
 
     def run(self):
@@ -71,9 +71,9 @@ class DupeScanner(QThread):
         self.step.emit("Recherche des photos et vidéos…")
         items = photos.scan(self.sources, None, span(0, 35), cancel, find_dupes=False)
         by_path = {it.path: it for it in items}
-        self.step.emit("Comparaison des fichiers de même taille…")
         exact = dupes.exact_groups([(it.path, it.size) for it in items],
-                                   span(35, 60 if self.similar else 100), cancel)
+                                   span(35, 60 if self.similar else 100), cancel, self.method,
+                                   self.step.emit)
         groups = [("identiques", g) for g in exact]
         if self.similar and not self.stop:
             self.step.emit("Comparaison visuelle des photos (plus long)…")
@@ -116,6 +116,7 @@ class DuplicatesDialog(QDialog):
         self.sources = [s for s in sources if os.path.isdir(s)]
         self.base = os.path.commonpath(self.sources) if self.sources else ""
         self.scanner = None
+        self.stopping = []  # recherches abandonnées, gardées jusqu'à leur arrêt effectif
         self.changed = False  # des fichiers ont été retirés
         self.s = settings()
 
@@ -140,12 +141,25 @@ class DuplicatesDialog(QDialog):
         self.similar.setChecked(self.s.value("dupes/similar", "false") == "true")
         self.similar.toggled.connect(self.start_scan)
         root.addWidget(self.similar)
+        mrow = QHBoxLayout()
+        mrow.addWidget(QLabel("Fichiers identiques repérés par :"))
+        self.compare = QComboBox()
+        for key, text in dupes.METHODS.items():
+            self.compare.addItem(text, key)
+        self.compare.setCurrentIndex(max(0, self.compare.findData(self.s.value("dupes/compare", "checksum"))))
+        self.compare.setToolTip("Somme de contrôle : chaque fichier de même taille est lu en entier ; deux "
+                                "fichiers ne sont doublons que si leur contenu est exactement le même.\n"
+                                "Rapide : seuls le début et la fin sont lus (très fiable pour photos et "
+                                "vidéos, mais pas garanti).")
+        self.compare.currentIndexChanged.connect(self.start_scan)
+        mrow.addWidget(self.compare)
+        mrow.addStretch(1)
+        root.addLayout(mrow)
 
         self.status = label("", "hint")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
+        self.bar = progress_bar()
         root.addWidget(self.bar)
 
         split = QSplitter()
@@ -207,17 +221,28 @@ class DuplicatesDialog(QDialog):
 
     # ------------------------------------------------------------- recherche
     def stop_scan(self):
-        if self.scanner:
-            self.scanner.stop = True
-            self.scanner.wait(15000)
-            self.scanner = None
+        """Arrête la recherche en cours sans bloquer la fenêtre : ses résultats seront ignorés."""
+        sc, self.scanner = self.scanner, None
+        if sc and sc.isRunning():
+            sc.stop = True
+            for sig in (sc.progress, sc.step, sc.done):
+                try:
+                    sig.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            self.stopping.append(sc)
+            sc.finished.connect(lambda sc=sc: sc in self.stopping and self.stopping.remove(sc))
 
     def done(self, r):
         self.stop_scan()
+        for sc in list(self.stopping):
+            sc.wait()  # lecture interrompue au bloc suivant : quasi immédiat
+        self.stopping.clear()
         super().done(r)
 
     def start_scan(self):
         self.s.setValue("dupes/similar", "true" if self.similar.isChecked() else "false")
+        self.s.setValue("dupes/compare", self.compare.currentData())
         self.stop_scan()
         self.tree.clear()
         self.groups = []
@@ -232,13 +257,15 @@ class DuplicatesDialog(QDialog):
             return
         self.bar.setValue(0)
         self.bar.show()
-        self.scanner = DupeScanner(self.sources, self.similar.isChecked())
+        self.status.setText("Recherche des photos et vidéos…")
+        self.scanner = DupeScanner(self.sources, self.similar.isChecked(), self.compare.currentData())
         self.scanner.progress.connect(self.bar.setValue)
         self.scanner.step.connect(self.status.setText)
         self.scanner.done.connect(self.scanned)
         self.scanner.start()
 
     def scanned(self, groups):
+        self.scanner = None
         self.bar.hide()
         self.groups = sorted(groups, key=lambda kg: -sum(it.size for it in kg[1][1:]))
         if not self.groups:

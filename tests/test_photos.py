@@ -105,3 +105,17 @@ def test_noms_windows():
     assert system.safe_name("CON.jpg", windows=True) == "_CON.jpg"
     assert system.safe_name("dossier. ", windows=True) == "dossier"
     assert system.safe_name("a:b", windows=False) == "a:b"
+
+
+def test_exact_groups_methods(tmp_path):
+    """Même taille, même début et même fin mais milieu différent : seule la somme de contrôle les distingue."""
+    from smartphone_backup.core import dupes
+    head, tail = b"A" * 200_000, b"Z" * 200_000
+    a, b, c = tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "c.mp4"
+    a.write_bytes(head + b"1" * 100_000 + tail)
+    b.write_bytes(head + b"2" * 100_000 + tail)
+    c.write_bytes(a.read_bytes())
+    files = [(str(p), os.path.getsize(p)) for p in (a, b, c)]
+    assert sorted(map(sorted, dupes.exact_groups(files))) == [sorted([str(a), str(c)])]
+    assert sorted(map(sorted, dupes.exact_groups(files, method="fast"))) == [sorted(map(str, (a, b, c)))]
+    assert dupes.exact_groups(files, cancel=lambda: True) == []

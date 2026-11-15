@@ -52,7 +52,8 @@ QSpinBox::up-button { border-top-right-radius: 8px; }
 QSpinBox::down-button { border-bottom-right-radius: 8px; }
 
 QComboBox QAbstractItemView { background: #1b1e24; selection-background-color: #2a3a58; }
-QProgressBar { background: #111317; border: none; border-radius: 6px; height: 12px; text-align: center; color: transparent; }
+QProgressBar { background: #262a33; border: 1px solid #3a404c; border-radius: 7px; min-height: 18px; max-height: 18px;
+               text-align: center; color: #ffffff; font-size: 12px; font-weight: 600; }
 QProgressBar::chunk { background: #4c8dff; border-radius: 6px; }
 QPlainTextEdit { background: #0d0f12; border: 1px solid #272b33; border-radius: 10px; padding: 8px;
                  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 12px; color: #aab1bd; }
@@ -97,6 +98,15 @@ def settings():
         for k in old.allKeys():
             s.setValue(k, old.value(k))
     return s
+
+
+def progress_bar():
+    """Barre de progression 0-100 avec le pourcentage écrit dessus."""
+    b = QProgressBar()
+    b.setRange(0, 100)
+    b.setTextVisible(True)
+    b.setFormat("%p %")
+    return b
 
 
 def fit_to_screen(w, width, height):
@@ -302,8 +312,7 @@ class BasePage(QWidget):
         c, l = card()
         self.step = label("Prêt.", "section")
         l.addWidget(self.step)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
+        self.bar = progress_bar()
         l.addWidget(self.bar)
         self.logbox = QPlainTextEdit()
         self.logbox.setReadOnly(True)

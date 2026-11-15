@@ -5,11 +5,11 @@ import os
 
 from .qt import Qt, QThread, Signal
 from .qt import (QButtonGroup, QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout, QLineEdit,
-                 QMessageBox, QProgressBar, QPushButton, QRadioButton, QSpinBox, QTreeWidget,
+                 QMessageBox, QPushButton, QRadioButton, QSpinBox, QTreeWidget,
                  QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..core import photos
-from .common import ORANGE, card, fit_to_screen, label, scrollable, settings
+from .common import ORANGE, card, fit_to_screen, label, progress_bar, scrollable, settings
 
 
 def find_sources(root):
@@ -185,8 +185,7 @@ class SortPanel(QWidget):
         self.summary = label("", "hint")
         self.summary.setWordWrap(True)
         l.addWidget(self.summary)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
+        self.bar = progress_bar()
         self.bar.hide()
         l.addWidget(self.bar)
         self.tree = QTreeWidget()

@@ -21,7 +21,7 @@ python packaging\windows\make_icon.py build\app.ico
 
 Write-Host "== PyInstaller"
 python -m PyInstaller --noconfirm --clean --log-level WARN `
-    --name SmartphoneBackup --windowed --icon build\app.ico `
+    --name SmartphoneBackup --windowed --icon "$Root\build\app.ico" `
     --distpath dist --workpath build\pyi --specpath build `
     --paths "$Root" `
     --add-data "$Root\smartphone_backup\icons;smartphone_backup\icons" `

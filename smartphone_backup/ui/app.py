@@ -1,9 +1,11 @@
 """Fenêtre principale : accueil + écrans iPhone et Android dans une pile."""
+import signal
 import sys
 
-from .qt import QLocale, QTranslator, before_app, translations_path
+from .qt import QKeySequence, QLocale, QShortcut, QTimer, QTranslator, before_app, translations_path
 from .qt import QApplication, QMessageBox, QStackedWidget
 
+from ..core import procs
 from .android_page import AndroidPage
 from .common import STYLE, DeviceWatcher, app_icon, dark_palette, fit_to_screen, scrollable
 from .home import HomePage
@@ -29,6 +31,11 @@ class MainWindow(QStackedWidget):
         fit_to_screen(self, 820, 820)
         self.home.chosen.connect(self.open_page)
         self.home.help.connect(self.open_prereqs)
+        for p in [self.home, *self.pages.values()]:
+            p.quit.connect(self.close)  # même chemin que la croix de la fenêtre
+        QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
+        self.stopped = False
+        self.adb_was_running = procs.adb_server_running()  # avant que l'appli ne lance adb
         for p in self.pages.values():
             p.help.connect(self.open_prereqs)
 
@@ -54,19 +61,34 @@ class MainWindow(QStackedWidget):
         self.setWindowTitle(TITLE)
 
     def closeEvent(self, e):
+        """Croix de la fenêtre, bouton « Quitter » et Ctrl+Q passent tous par ici."""
         running = [p for p in self.pages.values() if p.busy()]
-        if running:
+        if running and not self.stopped:
             r = QMessageBox.question(self, TITLE, "Une sauvegarde est en cours. L'interrompre et quitter ?")
             if r != QMessageBox.Yes:
                 e.ignore()
                 return
-            for p in running:
-                p.cancel()
-                p.worker.wait(5000)
-        self.watcher.requestInterruption()
-        self.watcher.wait(5000)
+        self.shutdown()
         e.accept()
+        QApplication.quit()
 
+    def shutdown(self):
+        """Arrête les tâches, la détection des téléphones et tous les processus lancés par l'appli."""
+        if self.stopped:
+            return
+        self.stopped = True
+        for p in self.pages.values():
+            if p.busy():
+                p.cancel()
+        self.watcher.requestInterruption()
+        threads = [self.watcher] + [p.worker for p in self.pages.values() if p.worker]
+        for _ in range(3):  # une tâche peut relancer une commande avant de voir l'annulation
+            procs.kill_children()
+            if all(t.wait(2000) for t in threads):
+                break
+        procs.kill_children()
+        if not self.adb_was_running and procs.adb_server_running():
+            procs.stop_adb_server()  # serveur adb démarré par l'appli : on l'arrête aussi
 
 def load_translations(app):
     """Boîtes de dialogue Qt (sélecteur de dossiers, Oui/Non…) en français."""
@@ -86,5 +108,12 @@ def main():
     app.setPalette(dark_palette())
     app.setStyleSheet(STYLE)
     w = MainWindow()
+    app.aboutToQuit.connect(w.shutdown)
+    # arrêt demandé de l'extérieur (Ctrl+C dans le terminal, fin de session…)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: app.quit())
+    tick = QTimer()
+    tick.timeout.connect(lambda: None)  # laisse Python traiter les signaux
+    tick.start(300)
     w.show()
     sys.exit(app.exec())

@@ -215,10 +215,19 @@ class DeviceWatcher(QThread):
                 self.msleep(100)
 
 
+def quit_button(signal):
+    b = QPushButton("Quitter")
+    b.setObjectName("back")
+    b.setToolTip("Fermer l'application (Ctrl+Q)")
+    b.clicked.connect(signal.emit)
+    return b
+
+
 # ---------------------------------------------------------------- page de base
 class BasePage(QWidget):
     """En-tête (retour, titre, état de l'appareil), carte de progression, barre de boutons."""
     back = Signal()
+    quit = Signal()
     help = Signal(str)  # ouvre la fenêtre des prérequis
     APP = ""
     TARGET = ""
@@ -237,6 +246,7 @@ class BasePage(QWidget):
         top = QHBoxLayout()
         top.addWidget(self.b_back)
         top.addStretch(1)
+        top.addWidget(quit_button(self.quit))
         self.root.addLayout(top)
 
         head = QHBoxLayout()

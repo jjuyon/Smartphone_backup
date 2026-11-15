@@ -55,6 +55,7 @@ main.py                              point d'entrée
 smartphone_backup/core/iphone.py     logique iPhone (sans interface)
 smartphone_backup/core/android.py    logique Android (sans interface)
 smartphone_backup/core/prereqs.py    vérification / installation des prérequis
+smartphone_backup/core/procs.py      arrêt des processus lancés par l'appli à la fermeture
 smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
 smartphone_backup/icons/             icônes SVG de l'appli
 build_appimage.sh          fabrication de l'AppImage

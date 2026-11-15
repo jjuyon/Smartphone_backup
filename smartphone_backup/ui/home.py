@@ -3,18 +3,23 @@ from .qt import Qt, Signal
 from .qt import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..core import prereqs
-from .common import GREEN, GREY, ORANGE, RED, ClickableCard, label, status_html
+from .common import GREEN, GREY, ORANGE, RED, ClickableCard, label, quit_button, status_html
 
 
 class HomePage(QWidget):
     chosen = Signal(str)  # "iphone" ou "android"
     help = Signal(str)    # ouvre la fenêtre des prérequis
+    quit = Signal()
 
     def __init__(self):
         super().__init__()
         root = QVBoxLayout(self)
-        root.setContentsMargins(40, 40, 40, 30)
+        root.setContentsMargins(40, 18, 40, 30)
         root.setSpacing(10)
+        top = QHBoxLayout()
+        top.addStretch(1)
+        top.addWidget(quit_button(self.quit))
+        root.addLayout(top)
         root.addStretch(1)
         t = label("Smartphone Backup", "bigtitle")
         t.setAlignment(Qt.AlignCenter)

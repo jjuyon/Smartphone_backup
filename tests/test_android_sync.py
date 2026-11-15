@@ -83,3 +83,18 @@ def test_recuperation_ancienne_copie_en_bloc(fake_phone, tmp_path):
     assert any("récupérés" in m for m in logs)
     assert r["copied"] == 1  # seul b.jpg (incomplet) est recopié
     assert not (out / android.STAGING).exists()
+
+
+def test_storages_ignore_internal_aliases():
+    """sdcard0 (alias de la mémoire interne, cas du Honor sans carte SD) n'est pas une carte SD."""
+    from smartphone_backup.core.android import parse_storages
+    out = ("/sdcard|/storage/emulated/0|30:1234\n"
+           "emulated|/storage/emulated|30:1\n"
+           "self|/storage/self|0:5\n"
+           "sdcard0|/storage/emulated/0|30:1234\n"   # lien
+           "legacy2|/mnt/runtime/x|30:1234\n")        # montage du même stockage
+    assert parse_storages(out) == []
+    out += "1A2B-3C4D|/storage/1A2B-3C4D|45:1\n"
+    assert parse_storages(out) == [("/storage/1A2B-3C4D", "Carte SD")]
+    out += "usb|/mnt/media_rw/usb|45:1\n"             # second nom de la même carte
+    assert parse_storages(out) == [("/storage/1A2B-3C4D", "Carte SD")]

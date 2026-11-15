@@ -279,15 +279,44 @@ def move_deleted(out, local_dir, remote, log):
     return n
 
 
+# Noms de /storage qui ne sont que des alias de la mémoire interne (selon les fabricants)
+STORAGE_ALIASES = {"emulated", "self", "sdcard", "sdcard0", "legacy", "enc_emulated", "knox-emulated"}
+
+# Pour chaque entrée de /storage : nom|chemin réel|périphérique:inode, plus la même chose pour /sdcard
+# (une « carte SD » qui pointe vers la mémoire interne, par lien ou par montage, est écartée).
+STORAGE_PROBE = ('echo "/sdcard|$(readlink -f /sdcard)|$(stat -L -c %d:%i /sdcard/ 2>/dev/null)"; '
+                 'for d in /storage/*; do '
+                 'echo "${d##*/}|$(readlink -f "$d")|$(stat -L -c %d:%i "$d/" 2>/dev/null)"; done')
+
+
+def parse_storages(text):
+    """Analyse la sortie de STORAGE_PROBE -> [(chemin, nom)] des vraies cartes SD / clés USB."""
+    rows = [l.strip().split("|") for l in text.splitlines() if l.count("|") == 2]
+    internal = next((r for r in rows if r[0] == "/sdcard"), None)
+    same = {x for x in (internal or [])[1:] if x}
+    same.add("/sdcard")
+    ids, seen = [], set()
+    for name, real, devino in rows:
+        if name == "/sdcard" or not name or name == "*" or name in STORAGE_ALIASES:
+            continue
+        if real in same or devino in same or real.startswith("/storage/emulated") \
+                or real.startswith("/data/media"):
+            continue
+        key = devino or real or name
+        if key in seen:  # deux noms pour le même stockage
+            continue
+        seen.add(key)
+        ids.append(name)
+    return [(f"/storage/{i}", "Carte SD" if len(ids) == 1 else f"Carte SD {i}") for i in ids]
+
+
 def list_storages(adb):
     """Cartes SD / stockages externes : [(chemin, nom)] ex. ('/storage/1A2B-3C4D', 'Carte SD')."""
     try:
-        r = adb.run("shell", "ls /storage", timeout=15)
+        r = adb.run("shell", STORAGE_PROBE, timeout=15)
     except Exception:
         return []
-    ids = [n.strip() for n in r.stdout.splitlines()
-           if n.strip() and n.strip() not in ("emulated", "self") and not n.startswith("ls:")]
-    return [(f"/storage/{i}", "Carte SD" if len(ids) == 1 else f"Carte SD {i}") for i in ids]
+    return parse_storages(r.stdout)
 
 
 def build_selection(opts, extra, storages=(("/sdcard", ""),)):

@@ -139,7 +139,7 @@ class DuplicatesDialog(QDialog):
         self.similar = QCheckBox("Chercher aussi les photos ressemblantes : même photo redimensionnée ou "
                                  "recompressée (ex. renvoyée par WhatsApp). Plus lent, à vérifier.")
         self.similar.setChecked(self.s.value("dupes/similar", "false") == "true")
-        self.similar.toggled.connect(self.start_scan)
+        self.similar.toggled.connect(self.options_changed)
         root.addWidget(self.similar)
         mrow = QHBoxLayout()
         mrow.addWidget(QLabel("Fichiers identiques repérés par :"))
@@ -151,9 +151,13 @@ class DuplicatesDialog(QDialog):
                                 "fichiers ne sont doublons que si leur contenu est exactement le même.\n"
                                 "Rapide : seuls le début et la fin sont lus (très fiable pour photos et "
                                 "vidéos, mais pas garanti).")
-        self.compare.currentIndexChanged.connect(self.start_scan)
+        self.compare.currentIndexChanged.connect(self.options_changed)
         mrow.addWidget(self.compare)
         mrow.addStretch(1)
+        self.b_go = QPushButton()
+        self.b_go.setObjectName("primary")
+        self.b_go.clicked.connect(self.go)
+        mrow.addWidget(self.b_go)
         root.addLayout(mrow)
 
         self.status = label("", "hint")
@@ -217,7 +221,7 @@ class DuplicatesDialog(QDialog):
         root.addLayout(btns)
 
         self.groups = []
-        self.start_scan()
+        self.reset("Choisissez les options, puis cliquez sur « Démarrer la recherche ».")
 
     # ------------------------------------------------------------- recherche
     def stop_scan(self):
@@ -240,21 +244,38 @@ class DuplicatesDialog(QDialog):
         self.stopping.clear()
         super().done(r)
 
-    def start_scan(self):
+    def go(self):
+        if self.scanner:
+            self.reset("Recherche arrêtée. Cliquez sur « Démarrer la recherche » pour recommencer.")
+        else:
+            self.start_scan()
+
+    def options_changed(self):
         self.s.setValue("dupes/similar", "true" if self.similar.isChecked() else "false")
         self.s.setValue("dupes/compare", self.compare.currentData())
+        if self.scanner or self.groups:
+            self.reset("Options modifiées : cliquez sur « Démarrer la recherche » pour relancer.")
+
+    def reset(self, message):
+        """Arrête une éventuelle recherche et vide les résultats."""
         self.stop_scan()
         self.tree.clear()
         self.groups = []
         self.preview.clear()
         self.info.clear()
         self.summary.clear()
+        self.bar.hide()
         for b in (self.b_auto, self.b_none, self.b_remove):
             b.setEnabled(False)
+        self.b_go.setText("Démarrer la recherche")
+        self.b_go.setEnabled(bool(self.sources))
+        self.status.setText(message if self.sources else "Aucun dossier à analyser.")
+
+    def start_scan(self):
+        self.reset("")
         if not self.sources:
-            self.status.setText("Aucun dossier à analyser.")
-            self.bar.hide()
             return
+        self.b_go.setText("Arrêter")
         self.bar.setValue(0)
         self.bar.show()
         self.status.setText("Recherche des photos et vidéos…")
@@ -267,6 +288,7 @@ class DuplicatesDialog(QDialog):
     def scanned(self, groups):
         self.scanner = None
         self.bar.hide()
+        self.b_go.setText("Relancer la recherche")
         self.groups = sorted(groups, key=lambda kg: -sum(it.size for it in kg[1][1:]))
         if not self.groups:
             self.status.setText(status := "Aucun doublon trouvé ✓")

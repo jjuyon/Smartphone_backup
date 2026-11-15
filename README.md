@@ -46,7 +46,9 @@ demandé via pkexec) ou donne la commande à copier. Sans agent polkit graphique
 
 ## Android
 - Activer « Débogage USB » (Options pour les développeurs) et accepter l'autorisation.
-- Copie incrémentale (taille + date), carte SD, dossier supplémentaire, mode miroir
+- Copie incrémentale (taille + date) par lots, directement dans la destination : les fichiers
+  apparaissent au fur et à mesure et une interruption ne perd que le lot en cours.
+- Carte SD, dossier supplémentaire, mode miroir
   (les fichiers supprimés du téléphone vont dans `_Corbeille-sync`).
 
 ## Photos (rangement et doublons)

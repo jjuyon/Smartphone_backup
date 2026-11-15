@@ -146,7 +146,7 @@ class AndroidPage(BasePage):
         adb = android.Adb(serial)
 
         def job(log, progress, step, cancelled):
-            android.sync(adb, out, selected, mirror, log, progress, cancelled)
+            android.sync(adb, out, selected, mirror, log, progress, cancelled, step)
 
         self.run_task(job, "Synchronisation en cours…", adb.cancel)
 

@@ -11,6 +11,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import time
 from datetime import datetime
 
 # (dossier sur le téléphone, dossier de destination local)
@@ -94,10 +96,65 @@ def needs_copy(local, size, mtime):
 
 
 # ------------------------------------------------------------ synchronisation
-def sync(adb, out, selected, mirror, log, progress, cancel):
-    """selected : liste de (dossier téléphone absolu, dossier local relatif)."""
-    plans = []  # (src, local_dir, remote, bulk, todo)
+STAGING = ".transfert-en-cours"  # ancienne copie en bloc (versions précédentes de l'appli)
+BATCH_FILES = 40                 # fichiers par commande « adb pull »
+BATCH_BYTES = 300 * 1024 * 1024  # … ou moins si les fichiers sont gros (vidéos)
+
+
+def human(n):
+    for unit in ("o", "Ko", "Mo", "Go", "To"):
+        if n < 1024 or unit == "To":
+            return (f"{n:.0f} {unit}" if unit == "o" else f"{n:.1f} {unit}").replace(".", ",")
+        n /= 1024
+
+
+def salvage_staging(out, plans, log):
+    """Récupère les fichiers d'une copie en bloc interrompue (anciennes versions) au lieu de les jeter."""
+    staging = os.path.join(out, STAGING)
+    if not os.path.isdir(staging):
+        return
+    n = 0
+    for src, local_dir in plans:
+        made = os.path.join(staging, os.path.basename(src.rstrip("/")))
+        for base, _, names in os.walk(made):
+            for name in names:
+                dest = os.path.join(local_dir, os.path.relpath(os.path.join(base, name), made))
+                if not os.path.exists(dest):
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.move(os.path.join(base, name), dest)
+                    n += 1
+    shutil.rmtree(staging, ignore_errors=True)
+    if n:
+        log(f"  {n} fichiers récupérés d'une copie précédente interrompue")
+
+
+def batches(todo, remote):
+    """Regroupe les fichiers à copier par dossier, en lots de taille raisonnable."""
+    by_dir = {}
+    for rel in todo:
+        by_dir.setdefault(rel.rpartition("/")[0], []).append(rel)
+    for d in sorted(by_dir):
+        batch, size = [], 0
+        for rel in sorted(by_dir[d]):
+            if batch and (len(batch) >= BATCH_FILES or size + remote[rel][0] > BATCH_BYTES):
+                yield d, batch
+                batch, size = [], 0
+            batch.append(rel)
+            size += remote[rel][0]
+        if batch:
+            yield d, batch
+
+
+def sync(adb, out, selected, mirror, log, progress, cancel, step=lambda t: None):
+    """selected : liste de (dossier téléphone absolu, dossier local relatif).
+
+    Copie par lots directement dans la destination : les fichiers apparaissent au fur et à mesure,
+    la progression suit les octets reçus et une interruption ne perd que le lot en cours (un
+    fichier incomplet a une taille ou une date différente : il est recopié la fois suivante)."""
+    plans = []  # (src, local_dir, remote, todo)
     log("Analyse du téléphone…")
+    step("Analyse du téléphone…")
+    salvage_staging(out, [(src, os.path.join(out, rel)) for src, rel in selected], log)
     for src, local_rel in selected:
         if cancel():
             return {}
@@ -106,74 +163,71 @@ def sync(adb, out, selected, mirror, log, progress, cancel):
             log(f"  {src} : absent, ignoré")
             continue
         local_dir = os.path.join(out, local_rel)
-        # copie en bloc seulement si le dossier local n'existe pas et n'est pas déjà
-        # destiné à un autre dossier du téléphone (ex. ancien et nouveau WhatsApp)
-        bulk = bool(remote) and not os.path.exists(local_dir) \
-            and all(local_dir != p[1] for p in plans)
-        todo = list(remote) if bulk else [r for r, (s, m) in remote.items()
-                                          if needs_copy(os.path.join(local_dir, *r.split("/")), s, m)]
-        log(f"  {src} : {len(remote)} fichiers, {len(todo)} à copier")
-        plans.append((src, local_dir, remote, bulk, todo))
+        todo = [r for r, (s, m) in remote.items() if needs_copy(os.path.join(local_dir, *r.split("/")), s, m)]
+        log(f"  {src} : {len(remote)} fichiers, {len(todo)} à copier "
+            f"({human(sum(remote[r][0] for r in todo))})")
+        plans.append((src, local_dir, remote, todo))
 
-    total = sum(remote[r][0] for _, _, remote, _, todo in plans for r in todo) or 1
-    done = 0
+    total = sum(remote[r][0] for _, _, remote, todo in plans for r in todo) or 1
+    n_total = sum(len(todo) for *_, todo in plans)
+    done = n_done = 0
     copied = errors = removed = 0
-    for src, local_dir, remote, bulk, todo in plans:
+    started = time.time()
+    for src, local_dir, remote, todo in plans:
         if cancel():
-            log("Annulé.")
             break
-        if bulk:
-            n_files = len(todo)
-            avg = sum(remote[r][0] for r in todo) / max(n_files, 1)
-            staging = os.path.join(out, ".transfert-en-cours")
-            shutil.rmtree(staging, ignore_errors=True)
-            os.makedirs(staging)
-            log(f"Copie de {src} ({n_files} fichiers)…")
-            p = subprocess.Popen(adb.cmd("pull", "-a", src, staging), stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT, bufsize=0)
-            adb.procs.append(p)
-            buf, n = b"", 0
-            while True:
-                chunk = p.stdout.read(512)
-                if not chunk:
-                    break
-                buf += chunk
-                parts = re.split(rb"[\r\n]", buf)
-                buf = parts.pop()
-                for raw in parts:
-                    if re.match(rb"\[\s*100%\]", raw):
-                        n += 1
-                        progress(min(100, (done + n * avg) * 100 / total))
-            p.wait()
-            made = os.path.join(staging, os.path.basename(src.rstrip("/")))
-            if p.returncode == 0 and os.path.isdir(made) and not cancel():
-                os.makedirs(os.path.dirname(local_dir) or ".", exist_ok=True)
-                shutil.move(made, local_dir)
-                copied += n_files
-            else:
-                errors += n_files
-                log(f"  Échec ou interruption pour {src}")
-            shutil.rmtree(staging, ignore_errors=True)
-            done += sum(remote[r][0] for r in todo)
-        else:
-            for rel in todo:
-                if cancel():
-                    break
+        if todo:
+            log(f"Copie de {src} ({len(todo)} fichiers)…")
+        for d, batch in batches(todo, remote):
+            if cancel():
+                break
+            dest_dir = os.path.join(local_dir, *d.split("/")) if d else local_dir
+            os.makedirs(dest_dir, exist_ok=True)
+            dests = [os.path.join(dest_dir, rel.rpartition("/")[2]) for rel in batch]
+            with tempfile.TemporaryFile() as errf:
+                p = subprocess.Popen(adb.cmd("pull", "-a", *[f"{src}/{rel}" for rel in batch], dest_dir),
+                                     stdout=errf, stderr=subprocess.STDOUT)
+                adb.procs.append(p)
+                while True:  # progression : taille des fichiers déjà arrivés
+                    try:
+                        p.wait(timeout=0.5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pass
+                    got = 0
+                    for f in dests:
+                        try:
+                            got += os.path.getsize(f)
+                        except OSError:
+                            pass
+                    progress(min(99, (done + got) * 100 / total))
+                adb.procs.remove(p)
+                errf.seek(0)
+                msg = errf.read().decode("utf-8", "replace").strip()
+            for rel, dest in zip(batch, dests):
                 size, mtime = remote[rel]
-                dest = os.path.join(local_dir, *rel.split("/"))
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                r = adb.run("pull", "-a", f"{src}/{rel}", dest, timeout=3600)
-                if r.returncode == 0:
-                    copied += 1
+                if needs_copy(dest, size, mtime):
+                    if not cancel():  # annulé : le lot interrompu sera repris la prochaine fois
+                        errors += 1
+                        log(f"  Erreur : {src}/{rel}")
                 else:
-                    errors += 1
-                    log(f"  Erreur : {rel}")
+                    copied += 1
                 done += size
-                progress(min(100, done * 100 / total))
+                n_done += 1
+            if p.returncode not in (0, None) and msg and not cancel():
+                log("  adb : " + msg.splitlines()[-1])
+            progress(min(99, done * 100 / total))
+            speed = done / max(time.time() - started, 1)
+            left = (total - done) / speed if speed else 0
+            step(f"Copie : {n_done} / {n_total} fichiers · {human(done)} / {human(total)}"
+                 + (f" · environ {int(left // 60) + 1} min restantes" if n_done < n_total and done else ""))
+    if cancel():
+        log(f"Annulé : {copied} fichiers copiés. Relancez la sauvegarde pour copier le reste.")
+        return {"copied": copied, "errors": errors, "removed": 0}
     if mirror and not cancel():
         # plusieurs dossiers du téléphone peuvent alimenter le même dossier local
         union = {}
-        for _, local_dir, remote, _, _ in plans:
+        for _, local_dir, remote, _ in plans:
             union.setdefault(local_dir, set()).update(remote)
         for local_dir, rels in union.items():
             if not os.path.isdir(local_dir):

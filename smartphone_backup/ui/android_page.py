@@ -58,7 +58,8 @@ class AndroidPage(BasePage):
         self.root.addWidget(c)
 
         self.add_progress()
-        self.add_buttons([("Sauvegarder / synchroniser", self.start, True)], self.out)
+        self.add_buttons([("Sauvegarder / synchroniser", self.start, True),
+                          ("Ranger les photos…", self.sort_photos, False)], self.out)
         self.update_devices([], [])
 
     # ------------------------------------------------------------- appareils
@@ -148,3 +149,28 @@ class AndroidPage(BasePage):
             android.sync(adb, out, selected, mirror, log, progress, cancelled)
 
         self.run_task(job, "Synchronisation en cours…", adb.cancel)
+
+    def sort_photos(self):
+        from ..core import photos
+        from .photo_sort_dialog import PhotoSortDialog
+        dlg = PhotoSortDialog(self, self.out.text())
+        ok = dlg.exec()
+        dlg.stop_scan()  # aussi quand l'appli est fermée pendant que la fenêtre est ouverte
+        if not ok:
+            return
+        cfg = dlg.result_config
+        if not self.ensure_dir(cfg["dest"]):
+            return
+
+        def job(log, progress, step, cancelled):
+            items = cfg["items"]
+            if items is None:
+                step("Lecture des dates de prise de vue…")
+                items = photos.scan(cfg["sources"], cfg["dest"], progress, cancelled)
+                progress(0)
+            step("Rangement des photos…")
+            log(f"{len(items)} fichiers vers {cfg['dest']}")
+            photos.apply(photos.plan(items, **cfg["options"]), cfg["dest"], cfg["mode"],
+                         log, progress, cancelled, cfg["sources"])
+
+        self.run_task(job, "Rangement des photos…")

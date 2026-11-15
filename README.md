@@ -49,12 +49,27 @@ demandé via pkexec) ou donne la commande à copier. Sans agent polkit graphique
 - Copie incrémentale (taille + date), carte SD, dossier supplémentaire, mode miroir
   (les fichiers supprimés du téléphone vont dans `_Corbeille-sync`).
 
+### Rangement des photos
+
+Bouton « Ranger les photos… » sur l'écran Android : classe les photos et vidéos sauvegardées
+dans un dossier séparé (par défaut `Photos rangées` dans la sauvegarde), avec un aperçu avant de lancer.
+
+- Classements : par année puis mois, par année, par mois, par année puis jour, ou par
+  événement (photos prises sans longue pause regroupées, pause et taille minimale réglables).
+- Options : séparer photos et vidéos, séparer par origine (appareil photo, captures d'écran,
+  WhatsApp, autres), renommer avec la date.
+- Date de prise de vue : EXIF, sinon nom du fichier, sinon métadonnées vidéo, sinon date du fichier.
+- Méthode : liens physiques (aucun espace disque en plus, copie automatique si le disque ne
+  les permet pas), copie, ou déplacement (la synchronisation suivante recopiera alors les photos).
+- Relancer le rangement n'ajoute que les nouvelles photos.
+
 ## Structure
 ```
 main.py                              point d'entrée
 smartphone_backup/core/iphone.py     logique iPhone (sans interface)
 smartphone_backup/core/android.py    logique Android (sans interface)
 smartphone_backup/core/prereqs.py    vérification / installation des prérequis
+smartphone_backup/core/photos.py     rangement des photos par date
 smartphone_backup/core/procs.py      arrêt des processus lancés par l'appli à la fermeture
 smartphone_backup/ui/                accueil, écrans iPhone / Android, sélecteur de dossier, thème
 smartphone_backup/icons/             icônes SVG de l'appli

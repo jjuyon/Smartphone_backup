@@ -42,6 +42,16 @@ QPushButton#back:hover { color: #e8eaed; background: #1b1e24; }
 QCheckBox { spacing: 10px; padding: 6px 4px; }
 QCheckBox::indicator { width: 18px; height: 18px; border-radius: 5px; border: 1px solid #3a404b; background: #111317; }
 QCheckBox::indicator:checked { background: #4c8dff; border-color: #4c8dff; }
+QRadioButton { spacing: 10px; padding: 5px 4px; }
+QRadioButton::indicator { width: 16px; height: 16px; border-radius: 9px; border: 1px solid #3a404b; background: #111317; }
+QRadioButton::indicator:checked { border-color: #4c8dff; background: qradialgradient(cx:0.5, cy:0.5, radius:0.5,
+    fx:0.5, fy:0.5, stop:0 #4c8dff, stop:0.5 #4c8dff, stop:0.6 #111317, stop:1 #111317); }
+QSpinBox { background: #111317; border: 1px solid #2d323b; border-radius: 8px; padding: 6px 8px; min-width: 64px; }
+QSpinBox::up-button, QSpinBox::down-button { width: 18px; background: #262a32; border: none; }
+QSpinBox::up-button { border-top-right-radius: 8px; }
+QSpinBox::down-button { border-bottom-right-radius: 8px; }
+
+QComboBox QAbstractItemView { background: #1b1e24; selection-background-color: #2a3a58; }
 QProgressBar { background: #111317; border: none; border-radius: 6px; height: 12px; text-align: center; color: transparent; }
 QProgressBar::chunk { background: #4c8dff; border-radius: 6px; }
 QPlainTextEdit { background: #0d0f12; border: 1px solid #272b33; border-radius: 10px; padding: 8px;
@@ -71,6 +81,9 @@ QScrollArea#pageScroll, QScrollArea#pageScroll > QWidget > QWidget { background:
 QFrame#bannerWarn { background: #2b2416; border: 1px solid #5a4620; border-radius: 12px; }
 """
 
+# flèches des compteurs (le chemin des icônes n'est connu qu'au lancement)
+STYLE += "".join(f"QSpinBox::{d}-arrow {{ image: url(\"{ICONS}/arrow-{d}.svg\"); width: 10px; height: 10px; }}\n"
+                 for d in ("up", "down"))
 
 GREEN, ORANGE, RED, GREY = "#3ddc84", "#f0b429", "#ff8a8a", "#8b93a1"
 
